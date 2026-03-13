@@ -1,0 +1,51 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Linux Debug Config",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "Build/Linux/Debug",
+                "-S", ".",
+                "-G Ninja",
+                "-DCMAKE_TOOLCHAIN_FILE=/home/mursu/Documents/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "-DVCPKG_TARGET_TRIPLET=x64-linux",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DCMAKE_CXX_COMPILER=clang++",
+                "-DCMAKE_C_COMPILER=clang",
+                "-DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Windows Debug Config",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "Build/Windows/Debug",
+                "-S", ".",
+                "-G Ninja",
+                "-DCMAKE_TOOLCHAIN_FILE=/home/mursu/Documents/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "-DCMAKE_SYSTEM_NAME=Windows",
+                "-DCMAKE_CXX_COMPILER=clang++",                
+                "-DCMAKE_C_COMPILER=clang",               
+                "-DCMAKE_C_COMPILER_TARGET=x86_64-w64-windows-gnu",
+                "-DCMAKE_CXX_COMPILER_TARGET=x86_64-w64-windows-gnu",
+                "-DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres",
+                 "-DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic",
+                 "-DVCPKG_APPLOCAL_DEPS=OFF",
+                "-DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+    ]
+}

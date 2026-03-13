@@ -1,0 +1,27 @@
+{
+  "dependencies": [
+    {
+      "name": "sdl3",
+      "features": [
+        "alsa",
+        "vulkan",
+        "wayland",
+        "x11"
+      ]
+    },
+    {
+      "name": "vulkan-loader",
+      "features": [
+        "wayland",
+        "xlib"
+      ]
+    },
+    "entt",
+    "gamenetworkingsockets",
+    "glm",
+    "vulkan",
+    "vulkan-memory-allocator",
+    "volk",
+    "assimp"
+  ]
+}

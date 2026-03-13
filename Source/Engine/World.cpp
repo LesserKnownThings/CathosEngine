@@ -1,0 +1,179 @@
+#include "World.h"
+
+#include "Components/Transform.h"
+#include "Game/Camera.h"
+#include "Game/CommandProcessor.h"
+#include "Game/Player.h"
+#include "InputManager.h"
+#include "Math/TransformSystem.h"
+#include "Math/Vectors.h"
+#include "Netcode/NetworkManager.h"
+#include "Rendering/RenderingSystem.h"
+#include "Resources/AssetPath.h"
+#include "Resources/AssetServer.h"
+#include "Systems/SceneSystem.h"
+#include "fpm/fixed.hpp"
+#include <cstdint>
+#include <entt/entity/fwd.hpp>
+
+// inline void SpawnUnit(entt::registry& registry, )
+// {
+// }
+
+inline void CleanupHierarchy(entt::registry& registry, entt::entity parent)
+{
+    const auto& hierarchy = registry.get<Hierarchy>(parent);
+
+    entt::entity current = hierarchy.firstChild;
+    while (current != entt::null)
+    {
+        entt::entity next = registry.get<Hierarchy>(current).nextSibling;
+        registry.destroy(current);
+
+        current = next;
+    }
+}
+
+bool World::Initialize(int argc, const char* argv[])
+{
+    bool success = true;
+
+    // NetworkManager& netManager = NetworkManager::Get();
+    // success &= netManager.Initialize(argc, argv);
+
+    success &= RenderingSystem::Get().Initialize();
+
+    // Frontend::Get().Init(true);
+
+    CreateWorld();
+
+    return success;
+}
+
+void World::Shutdown()
+{
+    NetworkManager::Get().Shutdown();
+}
+
+void World::Run()
+{
+    NetworkManager::Get().Run();
+    InputManager::Get().PollInput(currentTick);
+}
+
+void World::NetPulse()
+{
+    if (player == nullptr)
+        return;
+
+    for (const auto& cmd : player->pendingCommands)
+    {
+        uint32_t cmdTick = cmd.tick;
+
+        if (cmdTick > currentTick)
+        {
+            // Record command for current use
+            // CommandProcessor::Get().AddCommand(cmd);
+        }
+        else
+        {
+            // We got a past msg we need to rollback
+        }
+    }
+
+    player->pendingCommands.clear();
+}
+
+void World::RunSim(uint32_t tick)
+{
+    currentTick = tick;
+
+    UpdateTransformHierarchy();
+
+    auto view = registry.view<LocalTransform>();
+    auto func = [&](entt::entity entity, LocalTransform& transform)
+    {
+        TransformSystem::Rotate(transform, Float3(fpm::fixed_16_16(0.0f), fpm::fixed_16_16(1.0f), fpm::fixed_16_16(0.0f)), fpm::fixed_16_16(50.0f) * TransformSystem::SIM_DT);
+    };
+    view.each(func);
+
+    // for (const auto& cmd : CommandProcessor::Get().GetCommandsForTick(tick))
+    // {
+    //     // Apply commands
+    // }
+}
+
+void World::Render(float alpha)
+{
+    RenderingSystem& rs = RenderingSystem::Get();
+
+    rs.BeginFrame();
+    // TODO parallelize the sync
+    SyncSimTransformToRenderTransform();
+    rs.Draw(registry, alpha);
+    rs.EndFrame();
+}
+
+void World::CreateWorld()
+{
+    player = new Player();
+
+    registry.on_destroy<Hierarchy>().connect<&CleanupHierarchy>();
+
+    AssetServer& as = registry.ctx().emplace<AssetServer>();
+
+    auto camEntity = registry.create();
+    registry.emplace<Camera>(camEntity);
+    registry.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 0.f, -2.f) });
+
+    entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/test.glb"));
+    TransformSystem::SetRotation(registry, parent, Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f)));
+}
+
+void World::UpdateTransformHierarchy()
+{
+    auto view = registry.view<LocalTransform, GlobalTransform, Hierarchy>();
+
+    auto func = [&](entt::entity entity, LocalTransform& local, GlobalTransform& global, Hierarchy& h)
+    {
+        if (local.dirty == 0)
+        {
+            return;
+        }
+
+        local.dirty = 0;
+
+        if (h.parent == entt::null)
+        {
+            global.matrix = local.LocalMatrix();
+        }
+        else
+        {
+            GlobalTransform& parentGlobal = registry.get<GlobalTransform>(h.parent);
+            global.matrix = parentGlobal.matrix * local.LocalMatrix();
+        }
+    };
+
+    view.each(func);
+}
+
+void World::SyncSimTransformToRenderTransform()
+{
+    auto view = registry.view<GlobalTransform, RenderTransform>();
+
+    auto func = [&](GlobalTransform& global, RenderTransform& render)
+    {
+        render.prevPos = render.currentPos;
+        render.prevRot = render.currentRot;
+
+        TransformSystem::ExtractPosRot(global.matrix, render.currentPos, render.currentRot);
+    };
+
+    view.each(func);
+}
+
+void World::GCPass()
+{
+    AssetServer& as = registry.ctx().get<AssetServer>();
+    as.GCPass();
+}

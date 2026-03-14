@@ -14,12 +14,6 @@ struct CameraTransform
     glm::vec3 scale;
 };
 
-struct CameraMatrices
-{
-    alignas(16) glm::mat4 projection;
-    alignas(16) glm::mat4 view;
-};
-
 struct Camera
 {
     float fieldOfView = 60.0f;

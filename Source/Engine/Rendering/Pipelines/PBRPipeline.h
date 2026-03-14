@@ -19,7 +19,7 @@ class PBRPipeline : public RenderPipeline
   private:
     const std::string shaderPath = "Data/Shaders/PBR";
 
-    std::array<VkDescriptorSet, 1> descriptorSets;
+    std::array<VkDescriptorSet, 2> descriptorSets;
 
     std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT,
                                                   VK_DYNAMIC_STATE_SCISSOR };

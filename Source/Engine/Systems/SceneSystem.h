@@ -4,13 +4,14 @@
 #include "Resources/AssetPath.h"
 #include "Resources/AssetServer.h"
 #include "Resources/Model.h"
+#include "Systems/TransformSystem.h"
 #include <entt/entt.hpp>
 
 namespace SceneSystem
 {
 // Creates a scene
 // A scene is a hierarchy of meshes, they're still separate entities
-inline entt::entity CreateScene(entt::registry& registry, const AssetPath& path)
+inline entt::entity CreateScene(entt::registry& registry, const AssetPath& path, const Float3& pos = {}, const Float3& eulers = {}, bool skipSort = false)
 {
     AssetServer& as = registry.ctx().get<AssetServer>();
     auto res = as.Load<Model>(path);
@@ -22,7 +23,11 @@ inline entt::entity CreateScene(entt::registry& registry, const AssetPath& path)
         const MeshGPUData& mesh = res->meshes[i];
 
         auto entity = registry.create();
-        registry.emplace<LocalTransform>(entity);
+        registry.emplace<LocalTransform>(entity, LocalTransform{
+                                                     .rotation = TransformSystem::EulerToQuat(eulers),
+                                                     .position = pos,
+                                                 });
+
         registry.emplace<GlobalTransform>(entity);
         registry.emplace<RenderTransform>(entity);
         registry.emplace<Hierarchy>(entity);
@@ -44,6 +49,16 @@ inline entt::entity CreateScene(entt::registry& registry, const AssetPath& path)
                 Hierarchy::LinkEntities(registry, entity, parent);
             }
         }
+    }
+
+    // There are instances in which you can skip the sorting, like for example creating 100 units in the same frame
+    if (!skipSort)
+    {
+        auto sortFunc = [](const Mesh& lhs, const Mesh& rhs)
+        {
+            return lhs.handle->id < rhs.handle->id;
+        };
+        registry.sort<Mesh>(sortFunc);
     }
 
     return parentStack[0];

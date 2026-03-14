@@ -10,17 +10,17 @@ layout (location = 5) in ivec4 boneIDS;
 layout (location = 6) in vec4 weights;
 
 layout (set = 0, binding = 0) uniform Camera {
-    mat4 projection;
-    mat4 view;
+    mat4 projectionView;
 } camera;
 
-layout (push_constant, std430) uniform SharedConstants {
-    mat4 model;
-} sharedConstants;
+layout (set = 1, binding = 0) readonly buffer InstanceBuffer {
+    mat4 models[];
+} instanceBuffer; 
 
 layout (location = 0) out vec2 fragUV;
 
 void main() {
-    gl_Position = camera.projection * camera.view  * sharedConstants.model * vec4(position, 1.0);
+    mat4 model = instanceBuffer.models[gl_InstanceIndex];
+    gl_Position = camera.projectionView * model * vec4(position, 1.0);
     fragUV = uv;
 }

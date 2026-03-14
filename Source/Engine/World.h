@@ -1,6 +1,7 @@
 #pragma once
 
 #include "entt/entt.hpp"
+#include <entt/entity/fwd.hpp>
 
 class Player;
 class RenderingSystem;
@@ -23,7 +24,7 @@ class World
   private:
     World() = default;
 
-    void UpdateTransformHierarchy();
+    void UpdateTransformHierarchy(const entt::entity* storage, auto& group);
     void SyncSimTransformToRenderTransform();
 
     entt::registry registry;

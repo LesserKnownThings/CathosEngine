@@ -7,9 +7,9 @@
 #include "InputManager.h"
 #include "Pipelines/PBRPipeline.h"
 #include "Rendering/Pipelines/RenderPipeline.h"
-#include "Rendering/PushConstant.h"
 #include "Rendering/VkData.h"
 #include "Resources/Model.h"
+#include "TaskScheduler.h"
 #include "Texture.h"
 
 #include <SDL3/SDL.h>
@@ -18,10 +18,13 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <entt/entity/fwd.hpp>
 #include <entt/entity/registry.hpp>
 #include <entt/entt.hpp>
+#include <entt/resource/resource.hpp>
 #include <glm/common.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/quaternion_geometric.hpp>
 #include <glm/fwd.hpp>
@@ -31,6 +34,7 @@
 #include <limits>
 #include <map>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -67,7 +71,7 @@ RenderingSystem& RenderingSystem::Get()
     return instance;
 }
 
-DescriptorRegistry RenderingSystem::registry = {};
+DescriptorRegistry RenderingSystem::descriptorRegistry = {};
 
 bool RenderingSystem::Initialize(int32_t inWidth, int32_t inHeight)
 {
@@ -100,12 +104,12 @@ void RenderingSystem::Shutdown()
 {
     CleanupSwapChain();
 
-    for (const auto& kvp : registry.descriptors)
+    for (const auto& kvp : descriptorRegistry.descriptors)
     {
         DestroyDescriptorSetLayout(kvp.second.layout);
     }
 
-    for (const auto& kvp : registry.mappedBuffers)
+    for (const auto& kvp : descriptorRegistry.mappedBuffers)
     {
         DestroyBuffer(kvp.second);
     }
@@ -219,11 +223,11 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
     VkCommandBuffer buffer = currentFrame.commandBuffer;
 
     auto camView = registry.view<Camera, const CameraTransform>();
-
-    camView.each([&](Camera& cam, const CameraTransform& transform)
-                 {                    
-        UpdateProjection(Camera::CalculateProjection(cam, GetAspectRatio()));
-        UpdateView(Camera::CalculateView(transform)); });
+    auto updateCamFunc = [&](Camera& cam, const CameraTransform& transform)
+    {
+        UpdateCameraMatrix(Camera::CalculateProjection(cam, GetAspectRatio()), Camera::CalculateView(transform));
+    };
+    camView.each(updateCamFunc);
 
     auto it = pipelines.find(EPipelineType::PBR);
     if (it != pipelines.end())
@@ -232,25 +236,52 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
 
         pipeline->Bind(buffer);
 
-        auto pbrUnits = registry.view<RenderTransform, Mesh>();
+        auto group = registry.group<Mesh, RenderTransform>();
+        const int32_t groupSize = group.size();
 
-        auto func = [&](const RenderTransform& render, const Mesh& mesh)
+        auto meshStorage = registry.storage<Mesh>().data();
+
+        static std::vector<glm::mat4> models;
+        models.resize(groupSize);
+
+        // TODO Frustum culling
+
+        auto interpFunc = [&group, &alpha, &meshStorage](int32_t start, int32_t end)
         {
-            SharedConstant shared{};
+            for (int32_t i = start; i < end; ++i)
+            {
+                RenderTransform& render = group.get<RenderTransform>(meshStorage[i]);
 
-            // TODO parallelize the conversion
-            // *********************************
-            const glm::quat prevRot = render.prevRot;
-            const glm::quat currRot = render.currentRot;
+                const glm::quat prevRot = render.prevRot;
+                const glm::quat currRot = render.currentRot;
 
-            glm::vec3 interpolatedPos = glm::mix(render.prevPos, render.currentPos, alpha);
-            glm::quat interpolatedRot = glm::slerp(prevRot, currRot, alpha);
-            interpolatedRot = glm::normalize(interpolatedRot);
+                glm::vec3 interpolatedPos = glm::mix(render.prevPos, render.currentPos, alpha);
+                glm::quat interpolatedRot = glm::slerp(prevRot, currRot, alpha);
+                interpolatedRot = glm::normalize(interpolatedRot);
 
-            shared.model = glm::translate(glm::mat4(1.0f), interpolatedPos) * glm::mat4_cast(interpolatedRot);
-            // *********************************
+                models[i] = (glm::translate(glm::mat4(1.0f), interpolatedPos) * glm::mat4_cast(interpolatedRot));
+            }
+        };
 
-            vkCmdPushConstants(buffer, pipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SharedConstant), &shared);
+        TaskScheduler::Get().ParallelForSync(groupSize, interpFunc);
+
+        auto it = descriptorRegistry.mappedBuffers.find({ InstanceBinding::SET, InstanceBinding::MODELS });
+        if (it != descriptorRegistry.mappedBuffers.end())
+        {
+            uint8_t* instanceBuffer = static_cast<uint8_t*>(it->second.allocationInfo.pMappedData);
+            memcpy(instanceBuffer, models.data(), models.size() * sizeof(glm::mat4));
+        }
+
+        int32_t batchStart = 0;
+        while (batchStart < groupSize)
+        {
+            const Mesh& mesh = group.get<Mesh>(meshStorage[batchStart]);
+            int32_t batchSize = 0;
+
+            while (batchStart + batchSize < groupSize && group.get<Mesh>(meshStorage[batchStart + batchSize]).handle->id == mesh.handle->id)
+            {
+                batchSize++;
+            }
 
             MeshGPUData& gpuData = mesh.handle->meshes[mesh.meshIndex];
 
@@ -258,10 +289,10 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
 
             vkCmdBindVertexBuffers(buffer, 0, 1, &gpuData.vertices.buffer, &zeroOffset);
             vkCmdBindIndexBuffer(buffer, gpuData.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(buffer, gpuData.indicesCount, 1, 0, 0, 0);
-        };
+            vkCmdDrawIndexed(buffer, gpuData.indicesCount, batchSize, 0, 0, batchStart);
 
-        pbrUnits.each(func);
+            batchStart += batchSize;
+        }
     }
 }
 
@@ -1080,7 +1111,8 @@ void RenderingSystem::CreateDepthResources()
 
 void RenderingSystem::CreateDescriptorRegistry()
 {
-    CreatePBRDescriptors();
+    CreateUniversalDescriptors();
+    CreateInstanceDescriptors();
 }
 
 VkImageView RenderingSystem::CreateImageView(VkImage image, VkFormat format,
@@ -1346,7 +1378,7 @@ void RenderingSystem::CreateImage(uint32_t width, uint32_t height, uint32_t laye
 
 void RenderingSystem::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags bufferUsage,
                                    VmaMemoryUsage usage, VmaAllocationCreateFlags flags,
-                                   VkBuffer& buffer, VmaAllocation& bufferMemory) const
+                                   VkBuffer& buffer, VmaAllocation& bufferMemory, VmaAllocationInfo* allocationInfo) const
 {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1359,7 +1391,7 @@ void RenderingSystem::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags bufferU
     allocInfo.flags = flags;
 
     if (vmaCreateBuffer(context.allocator, &bufferInfo, &allocInfo, &buffer, &bufferMemory,
-                        nullptr) != VK_SUCCESS)
+                        allocationInfo) != VK_SUCCESS)
     {
         std::cerr << "Failed to create buffer!" << std::endl;
     }
@@ -1378,14 +1410,6 @@ void RenderingSystem::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevic
     vkCmdCopyBuffer(commandBuffer.commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
     EndSingleTimeCommands(commandBuffer);
-}
-
-void RenderingSystem::CreateBuffer(VkBufferUsageFlagBits bufferType, uint32_t size,
-                                   AllocatedBuffer& outBuffer)
-{
-    CreateBuffer(size, bufferType, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
-                 VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, outBuffer.buffer,
-                 outBuffer.memory);
 }
 
 MeshGPUData RenderingSystem::CreateMesh(const MeshData& meshData)
@@ -1463,7 +1487,7 @@ void RenderingSystem::CreateDescriptorSet(VkDescriptorSetLayout layout,
     }
 }
 
-void RenderingSystem::CreatePBRDescriptors()
+void RenderingSystem::CreateUniversalDescriptors()
 {
     VkDescriptorSetLayoutBinding binding{};
     binding.binding = UniversalBinding::CAMERA;
@@ -1476,21 +1500,54 @@ void RenderingSystem::CreatePBRDescriptors()
     createInfo.bindingCount = UniversalBinding::BINDING_COUNT;
     createInfo.pBindings = &binding;
 
-    Descriptor globalDescriptor{};
+    Descriptor descriptor{};
     if (vkCreateDescriptorSetLayout(context.device, &createInfo, nullptr,
-                                    &globalDescriptor.layout) != VK_SUCCESS)
+                                    &descriptor.layout) != VK_SUCCESS)
     {
         throw std::invalid_argument("Failed to create descriptor!");
     }
 
     AllocatedBuffer buffer;
-    CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(CameraMatrices) * MAX_FRAMES_IN_FLIGHT,
-                 buffer);
-    CreateDescriptorSet(globalDescriptor.layout, globalDescriptor.set);
-    UpdateDescriptorSet(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, globalDescriptor.set, buffer);
+    CreateBuffer(sizeof(glm::mat4) * MAX_FRAMES_IN_FLIGHT, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, buffer.buffer, buffer.memory, &buffer.allocationInfo);
 
-    registry.descriptors.emplace(UniversalBinding::INDEX, std::move(globalDescriptor));
-    registry.mappedBuffers.emplace(std::make_tuple(0, 0), std::move(buffer));
+    CreateDescriptorSet(descriptor.layout, descriptor.set);
+    UpdateDescriptorSet(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, descriptor.set, buffer);
+
+    descriptorRegistry.descriptors.emplace(UniversalBinding::INDEX, std::move(descriptor));
+    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(UniversalBinding::SET, UniversalBinding::CAMERA), std::move(buffer));
+}
+
+void RenderingSystem::CreateInstanceDescriptors()
+{
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = InstanceBinding::MODELS;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    createInfo.bindingCount = InstanceBinding::BINDING_COUNT;
+    createInfo.pBindings = &binding;
+
+    Descriptor descriptor{};
+    if (vkCreateDescriptorSetLayout(context.device, &createInfo, nullptr,
+                                    &descriptor.layout) != VK_SUCCESS)
+    {
+        throw std::invalid_argument("Failed to create descriptor!");
+    }
+
+    AllocatedBuffer buffer;
+
+    constexpr int32_t MAX_INSTANCE_BUFFER = 20000;
+
+    CreateBuffer(sizeof(glm::mat4) * MAX_FRAMES_IN_FLIGHT * MAX_INSTANCE_BUFFER, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, buffer.buffer, buffer.memory, &buffer.allocationInfo);
+
+    CreateDescriptorSet(descriptor.layout, descriptor.set);
+    UpdateDescriptorSet(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, descriptor.set, buffer);
+
+    descriptorRegistry.descriptors.emplace(InstanceBinding::INDEX, std::move(descriptor));
+    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(InstanceBinding::SET, InstanceBinding::MODELS), std::move(buffer));
 }
 
 void RenderingSystem::UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set,
@@ -1543,34 +1600,20 @@ void RenderingSystem::UnmapMemory(VmaAllocation allocation)
     vmaUnmapMemory(context.allocator, allocation);
 }
 
-void RenderingSystem::UpdateProjection(const glm::mat4& projection)
+void RenderingSystem::UpdateCameraMatrix(const glm::mat4& projection, const glm::mat4& view)
 {
-    auto it = registry.mappedBuffers.find({ UniversalBinding::INDEX, 0 });
-    if (it != registry.mappedBuffers.end())
+    auto it = descriptorRegistry.mappedBuffers.find({ UniversalBinding::INDEX, 0 });
+    if (it != descriptorRegistry.mappedBuffers.end())
     {
-        auto& alloctedBuffer = it->second;
-        void* data;
-        vmaMapMemory(context.allocator, alloctedBuffer.memory, &data);
-        uint32_t frameOffset = sizeof(CameraMatrices) * currentFrame;
-        memcpy(static_cast<char*>(data) + frameOffset, glm::value_ptr(projection),
-               sizeof(glm::mat4));
-        vmaUnmapMemory(context.allocator, alloctedBuffer.memory);
-    }
-}
+        AllocatedBuffer& buffer = it->second;
 
-void RenderingSystem::UpdateView(const glm::mat4& view)
-{
-    auto it = registry.mappedBuffers.find({ UniversalBinding::INDEX, 0 });
-    if (it != registry.mappedBuffers.end())
-    {
-        auto& alloctedBuffer = it->second;
+        uint8_t* data = static_cast<uint8_t*>(buffer.allocationInfo.pMappedData);
 
-        void* data;
-        vmaMapMemory(context.allocator, alloctedBuffer.memory, &data);
-        uint32_t frameOffset = sizeof(CameraMatrices) * currentFrame;
-        memcpy(static_cast<char*>(data) + frameOffset + sizeof(glm::mat4), glm::value_ptr(view),
+        uint32_t frameOffset = sizeof(glm::mat4) * currentFrame;
+
+        const glm::mat4 projectionView = projection * view;
+        memcpy(data + frameOffset, glm::value_ptr(projectionView),
                sizeof(glm::mat4));
-        vmaUnmapMemory(context.allocator, alloctedBuffer.memory);
     }
 }
 

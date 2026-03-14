@@ -5,13 +5,14 @@
 #include "Game/CommandProcessor.h"
 #include "Game/Player.h"
 #include "InputManager.h"
-#include "Math/TransformSystem.h"
 #include "Math/Vectors.h"
 #include "Netcode/NetworkManager.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/AssetPath.h"
 #include "Resources/AssetServer.h"
 #include "Systems/SceneSystem.h"
+#include "Systems/TransformSystem.h"
+#include "TaskScheduler.h"
 #include "fpm/fixed.hpp"
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
@@ -88,14 +89,21 @@ void World::RunSim(uint32_t tick)
 {
     currentTick = tick;
 
-    UpdateTransformHierarchy();
+    auto group = registry.group<LocalTransform, GlobalTransform, Hierarchy>();
+    auto container = registry.storage<LocalTransform>().data();
 
-    auto view = registry.view<LocalTransform>();
-    auto func = [&](entt::entity entity, LocalTransform& transform)
+    UpdateTransformHierarchy(container, group);
+
+    auto func = [&](int32_t start, int32_t end)
     {
-        TransformSystem::Rotate(transform, Float3(fpm::fixed_16_16(0.0f), fpm::fixed_16_16(1.0f), fpm::fixed_16_16(0.0f)), fpm::fixed_16_16(50.0f) * TransformSystem::SIM_DT);
+        for (int32_t i = start; i < end; ++i)
+        {
+            LocalTransform& transform = group.get<LocalTransform>(container[i]);
+            TransformSystem::Rotate(transform, Float3(fpm::fixed_16_16(0.0f), fpm::fixed_16_16(1.0f), fpm::fixed_16_16(0.0f)), fpm::fixed_16_16(50.0f) * TransformSystem::SIM_DT);
+        }
     };
-    view.each(func);
+
+    TaskScheduler::Get().ParallelForSync(group.size(), func);
 
     // for (const auto& cmd : CommandProcessor::Get().GetCommandsForTick(tick))
     // {
@@ -124,37 +132,63 @@ void World::CreateWorld()
 
     auto camEntity = registry.create();
     registry.emplace<Camera>(camEntity);
-    registry.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 0.f, -2.f) });
+    registry.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 0.f, -5.f) });
 
-    entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/test.glb"));
-    TransformSystem::SetRotation(registry, parent, Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f)));
+    for (int32_t i = 0; i < 1; ++i)
+    {
+        // const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
+        // const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
+
+        //  const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f));
+        const Float3 pos = Float3(fpm::fixed_16_16(5.0f), fpm::fixed_16_16(0.0f), fpm::fixed_16_16(5.0f));
+
+        entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/sphere.glb"), pos, Float3{}, true);
+    }
+
+    for (int32_t i = 0; i < 1; ++i)
+    {
+        // const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
+        // const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
+
+        // const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f));
+        // const Float3 pos = Float3(row * fpm::fixed_16_16(3.0f), fpm::fixed_16_16(0.0f), col * fpm::fixed_16_16(3.0f));
+
+        entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/cube.glb"));
+    }
 }
 
-void World::UpdateTransformHierarchy()
+void World::UpdateTransformHierarchy(const entt::entity* storage, auto& group)
 {
-    auto view = registry.view<LocalTransform, GlobalTransform, Hierarchy>();
-
-    auto func = [&](entt::entity entity, LocalTransform& local, GlobalTransform& global, Hierarchy& h)
+    auto func = [&group, &storage](int32_t start, int32_t end)
     {
-        if (local.dirty == 0)
+        for (int32_t i = start; i < end; ++i)
         {
-            return;
-        }
+            const auto entity = storage[i];
 
-        local.dirty = 0;
+            LocalTransform& local = group.template get<LocalTransform>(entity);
+            Hierarchy& h = group.template get<Hierarchy>(entity);
+            GlobalTransform& global = group.template get<GlobalTransform>(entity);
 
-        if (h.parent == entt::null)
-        {
-            global.matrix = local.LocalMatrix();
-        }
-        else
-        {
-            GlobalTransform& parentGlobal = registry.get<GlobalTransform>(h.parent);
-            global.matrix = parentGlobal.matrix * local.LocalMatrix();
+            if (local.dirty == 0)
+            {
+                return;
+            }
+
+            local.dirty = 0;
+
+            if (h.parent == entt::null)
+            {
+                global.matrix = local.LocalMatrix();
+            }
+            else
+            {
+                GlobalTransform& parentGlobal = group.template get<GlobalTransform>(h.parent);
+                global.matrix = parentGlobal.matrix * local.LocalMatrix();
+            }
         }
     };
 
-    view.each(func);
+    TaskScheduler::Get().ParallelForSync(group.size(), func);
 }
 
 void World::SyncSimTransformToRenderTransform()

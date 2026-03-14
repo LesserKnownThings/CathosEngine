@@ -23,6 +23,7 @@ find_package(EnTT CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
+find_package(Tracy REQUIRED)
 ###############
 
 add_executable(CathosEngine ${GLOBAL_SOURCES})
@@ -39,4 +40,5 @@ PRIVATE
     glm::glm
     GameNetworkingSockets::GameNetworkingSockets
     assimp::assimp
+    Tracy::TracyClient
 )

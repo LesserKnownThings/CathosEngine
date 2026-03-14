@@ -28,7 +28,7 @@ struct TupleHash
 struct DescriptorRegistry
 {
     std::unordered_map<uint32_t, Descriptor> descriptors;
-    std::unordered_map<std::tuple<int32_t, int32_t>, AllocatedBuffer, TupleHash> mappedBuffers;
+    std::unordered_map<std::tuple<int32_t /*set*/, int32_t /*binding*/>, AllocatedBuffer, TupleHash> mappedBuffers;
 
     bool GetDescriptor(uint32_t set, Descriptor& outDescriptor) const
     {

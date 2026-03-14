@@ -1,10 +1,10 @@
 #pragma once
 
 #include "Components/Transform.h"
-#include "Math.h"
-#include "Matrices.h"
-#include "Quaternions.h"
-#include "Vectors.h"
+#include "Math/Math.h"
+#include "Math/Matrices.h"
+#include "Math/Quaternions.h"
+#include "Math/Vectors.h"
 #include "fpm/fixed.hpp"
 #include "fpm/math.hpp"
 #include <entt/entity/fwd.hpp>
@@ -19,7 +19,7 @@ namespace TransformSystem
 constexpr fpm::fixed_16_16 TICKS_PER_SECOND(30.0f);
 const fpm::fixed_16_16 SIM_DT = fpm::fixed_16_16(1.0) / TICKS_PER_SECOND;
 
-inline void ExtractPosRot(const Mat4 mat, Float3& outPos, Quat& outRot)
+inline void ExtractPosRot(const Mat4& mat, Float3& outPos, Quat& outRot)
 {
     outPos = Float3(mat[3]);
     outRot = glm::quat_cast(mat);

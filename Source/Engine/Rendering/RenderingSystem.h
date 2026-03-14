@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float2.hpp>
 #include <glm/ext/vector_int2.hpp>
 #include <optional>
@@ -104,14 +105,12 @@ class RenderingSystem
     void UpdateChunkTexture(const AllocatedTexture& texture, void* data, int32_t x, int32_t y,
                             uint32_t width, uint32_t height, int32_t layerIndex);
 
-    void CreateBuffer(VkBufferUsageFlagBits bufferType, uint32_t size, AllocatedBuffer& outBuffer);
     void CreateTexture(const TextureData& textureData, void* pixels, AllocatedTexture& outTexture,
                        bool keepStagingBuffer = false);
     MeshGPUData CreateMesh(const MeshData& meshData);
     void DestroyMesh(const MeshGPUData& mesh);
 
-    void UpdateProjection(const glm::mat4& projection);
-    void UpdateView(const glm::mat4& view);
+    void UpdateCameraMatrix(const glm::mat4& projection, const glm::mat4& view);
 
     float GetScreenWidth() const
     {
@@ -132,7 +131,7 @@ class RenderingSystem
 
     static const DescriptorRegistry& GetRegistry()
     {
-        return registry;
+        return descriptorRegistry;
     }
 
   private:
@@ -199,7 +198,7 @@ class RenderingSystem
 
     void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags bufferUsage, VmaMemoryUsage usage,
                       VmaAllocationCreateFlags flags, VkBuffer& buffer,
-                      VmaAllocation& bufferMemory) const;
+                      VmaAllocation& bufferMemory, VmaAllocationInfo* allocationInfo = nullptr) const;
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
                     VkDeviceSize srcOffset, VkDeviceSize dstOffset);
 
@@ -208,7 +207,8 @@ class RenderingSystem
                      VkImageUsageFlags usage, VmaAllocationCreateFlags memoryFlags,
                      VkImage& outImage, VmaAllocation& outMemory);
 
-    void CreatePBRDescriptors();
+    void CreateUniversalDescriptors();
+    void CreateInstanceDescriptors();
 
     void CreateDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& outSet);
     void UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set, AllocatedBuffer buffer,
@@ -228,7 +228,7 @@ class RenderingSystem
     std::optional<CallMe::Subscription> windowMinimizedHandle;
 
     VkContext context = {};
-    static DescriptorRegistry registry;
+    static DescriptorRegistry descriptorRegistry;
     VkFormat swapChainImageFormat;
     SwapChainData swapChainData;
 

@@ -22,6 +22,7 @@
     "vulkan",
     "vulkan-memory-allocator",
     "volk",
-    "assimp"
+    "assimp",
+    "tracy"
   ]
 }

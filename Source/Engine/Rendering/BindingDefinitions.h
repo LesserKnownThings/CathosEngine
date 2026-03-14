@@ -10,3 +10,12 @@ constexpr uint32_t BINDING_COUNT = 1;
 
 constexpr uint32_t CAMERA = 0;
 } // namespace UniversalBinding
+
+namespace InstanceBinding
+{
+constexpr uint32_t INDEX = 1;
+constexpr uint32_t SET = 1;
+constexpr uint32_t BINDING_COUNT = 1;
+
+constexpr uint32_t MODELS = 0;
+} // namespace InstanceBinding

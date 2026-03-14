@@ -195,23 +195,30 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.pNext = nullptr;
 
-    std::array<VkDescriptorSetLayout, 1> descriptorSetLayouts{};
+    std::array<VkDescriptorSetLayout, 2> descriptorSetLayouts{};
     const DescriptorRegistry& registry = RenderingSystem::GetRegistry();
 
-    Descriptor descriptor{};
-    if (registry.GetDescriptor(UniversalBinding::INDEX, descriptor))
+    Descriptor universal{};
+    if (registry.GetDescriptor(UniversalBinding::INDEX, universal))
     {
-        descriptorSetLayouts[0] = descriptor.layout;
-        descriptorSets[0] = descriptor.set;
+        descriptorSetLayouts[0] = universal.layout;
+        descriptorSets[0] = universal.set;
     }
 
-    std::array<VkPushConstantRange, 1> pushConstants{};
-    pushConstants[0].offset = 0;
-    pushConstants[0].size = sizeof(SharedConstants);
-    pushConstants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    Descriptor instance{};
+    if (registry.GetDescriptor(InstanceBinding::INDEX, instance))
+    {
+        descriptorSetLayouts[1] = instance.layout;
+        descriptorSets[1] = instance.set;
+    }
 
-    pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
-    pipelineLayoutInfo.pushConstantRangeCount = pushConstants.size();
+    // std::array<VkPushConstantRange, 1> pushConstants{};
+    // pushConstants[0].offset = 0;
+    // pushConstants[0].size = sizeof(SharedConstants);
+    // pushConstants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
 
     pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
     pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();

@@ -56,6 +56,7 @@ struct MeshGPUData
 struct Model
 {
     Model(const AssetPath& path)
+        : id(path.GetHash())
     {
         std::vector<MeshData> mData = ModelImporter::ImportModel(path.GetPath());
 
@@ -80,10 +81,13 @@ struct Model
     }
 
     std::vector<MeshGPUData> meshes;
+    uint64_t id;
 };
 
 struct Mesh
 {
     entt::resource<Model> handle;
     uint8_t meshIndex;
+
+    
 };

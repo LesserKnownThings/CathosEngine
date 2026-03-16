@@ -2,9 +2,7 @@
 #include <format>
 #include <iostream>
 
-namespace Utilities
-{
-std::string ConvertLogLevel(ELogLevel level)
+inline std::string ConvertLogLevel(ELogLevel level)
 {
     switch (level)
     {
@@ -16,11 +14,10 @@ std::string ConvertLogLevel(ELogLevel level)
         return "Log";
     }
 }
-} // namespace Utilities
 
 void DebugSystem::Log(const std::string& filter, ELogLevel level, const std::string& text)
 {
-    std::string final = std::format("[{}] ", Utilities::ConvertLogLevel(level)) + std::format("({}): ", filter) + text;
+    std::string final = std::format("[{}] ", ConvertLogLevel(level)) + std::format("({}): ", filter) + text;
 
     switch (level)
     {

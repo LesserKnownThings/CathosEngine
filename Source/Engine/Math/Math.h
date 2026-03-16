@@ -1,9 +1,7 @@
 #pragma once
 
-#include "Math/Quaternions.h"
-#include "Math/Vectors.h"
+#include "FixedMath.hpp"
 #include "fpm/fixed.hpp"
-#include "fpm/math.hpp"
 
 namespace Math
 {

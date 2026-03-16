@@ -222,10 +222,10 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
     const Frame& currentFrame = GetCurrentFrame();
     VkCommandBuffer buffer = currentFrame.commandBuffer;
 
-    auto camView = registry.view<Camera, const CameraTransform>();
-    auto updateCamFunc = [&](Camera& cam, const CameraTransform& transform)
+    auto camView = registry.view<CameraGlobalTransform>();
+    auto updateCamFunc = [&](const CameraGlobalTransform& global)
     {
-        UpdateCameraMatrix(Camera::CalculateProjection(cam, GetAspectRatio()), Camera::CalculateView(transform));
+        UpdateCameraMatrix(global.projectionView);
     };
     camView.each(updateCamFunc);
 
@@ -1600,7 +1600,7 @@ void RenderingSystem::UnmapMemory(VmaAllocation allocation)
     vmaUnmapMemory(context.allocator, allocation);
 }
 
-void RenderingSystem::UpdateCameraMatrix(const glm::mat4& projection, const glm::mat4& view)
+void RenderingSystem::UpdateCameraMatrix(const glm::mat4& projectionView)
 {
     auto it = descriptorRegistry.mappedBuffers.find({ UniversalBinding::INDEX, 0 });
     if (it != descriptorRegistry.mappedBuffers.end())
@@ -1611,7 +1611,6 @@ void RenderingSystem::UpdateCameraMatrix(const glm::mat4& projection, const glm:
 
         uint32_t frameOffset = sizeof(glm::mat4) * currentFrame;
 
-        const glm::mat4 projectionView = projection * view;
         memcpy(data + frameOffset, glm::value_ptr(projectionView),
                sizeof(glm::mat4));
     }

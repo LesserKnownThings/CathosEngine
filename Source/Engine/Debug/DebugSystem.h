@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cstdarg>
 #include <cstdint>
-#include <cstdio>
 #include <string>
 
 #define LOG(filter, level, text) \

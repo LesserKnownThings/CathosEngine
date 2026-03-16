@@ -2,22 +2,18 @@
 
 #include "Components/Transform.h"
 #include "Math/Math.h"
-#include "Math/Matrices.h"
-#include "Math/Quaternions.h"
-#include "Math/Vectors.h"
-#include "fpm/fixed.hpp"
-#include "fpm/math.hpp"
+
 #include <entt/entity/fwd.hpp>
 #include <entt/entt.hpp>
-
-#include <glm/ext/quaternion_geometric.hpp>
-#include <glm/ext/quaternion_trigonometric.hpp>
 
 // Helper functions used for transforms
 namespace TransformSystem
 {
 constexpr fpm::fixed_16_16 TICKS_PER_SECOND(30.0f);
-const fpm::fixed_16_16 SIM_DT = fpm::fixed_16_16(1.0) / TICKS_PER_SECOND;
+const fpm::fixed_16_16 SIM_DT = fpm::fixed_16_16(1.0f) / TICKS_PER_SECOND;
+
+constexpr float NON_SIM_TICKS_PER_SECOND = 120.0f;
+const float NON_SIM_DT = 1.0f / NON_SIM_TICKS_PER_SECOND;
 
 inline void ExtractPosRot(const Mat4& mat, Float3& outPos, Quat& outRot)
 {

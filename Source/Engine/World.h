@@ -24,14 +24,15 @@ class World
   private:
     World() = default;
 
-    void UpdateTransformHierarchy(const entt::entity* storage, auto& group);
+    void CameraMovement();
+    void UpdateTransformHierarchy();
     void SyncSimTransformToRenderTransform();
 
     entt::registry registry;
 
     Player* player = nullptr;
 
-    uint32_t currentTick = 0;
+    uint32_t simTick = 0;
 
     friend class Engine;
 };

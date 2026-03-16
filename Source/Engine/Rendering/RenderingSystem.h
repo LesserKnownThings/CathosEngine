@@ -110,7 +110,7 @@ class RenderingSystem
     MeshGPUData CreateMesh(const MeshData& meshData);
     void DestroyMesh(const MeshGPUData& mesh);
 
-    void UpdateCameraMatrix(const glm::mat4& projection, const glm::mat4& view);
+    void UpdateCameraMatrix(const glm::mat4& projectionView);
 
     float GetScreenWidth() const
     {
@@ -133,6 +133,8 @@ class RenderingSystem
     {
         return descriptorRegistry;
     }
+
+    SDL_Window* GetWindow() const { return window; }
 
   private:
     static uint32_t MIN_UNIFORM_ALIGNMENT;

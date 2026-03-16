@@ -5,7 +5,6 @@
 #include "Game/CommandProcessor.h"
 #include "Game/Player.h"
 #include "InputManager.h"
-#include "Math/Vectors.h"
 #include "Netcode/NetworkManager.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/AssetPath.h"
@@ -16,6 +15,7 @@
 #include "fpm/fixed.hpp"
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
+#include <glm/ext/vector_float2.hpp>
 
 // inline void SpawnUnit(entt::registry& registry, )
 // {
@@ -53,13 +53,15 @@ bool World::Initialize(int argc, const char* argv[])
 
 void World::Shutdown()
 {
-    NetworkManager::Get().Shutdown();
+    // NetworkManager::Get().Shutdown();
 }
 
 void World::Run()
 {
     NetworkManager::Get().Run();
-    InputManager::Get().PollInput(currentTick);
+    InputManager::Get().PollInput();
+
+    player->Run(registry, simTick);
 }
 
 void World::NetPulse()
@@ -71,7 +73,7 @@ void World::NetPulse()
     {
         uint32_t cmdTick = cmd.tick;
 
-        if (cmdTick > currentTick)
+        if (cmdTick > simTick)
         {
             // Record command for current use
             // CommandProcessor::Get().AddCommand(cmd);
@@ -87,23 +89,10 @@ void World::NetPulse()
 
 void World::RunSim(uint32_t tick)
 {
-    currentTick = tick;
+    simTick = tick;
 
-    auto group = registry.group<LocalTransform, GlobalTransform, Hierarchy>();
-    auto container = registry.storage<LocalTransform>().data();
-
-    UpdateTransformHierarchy(container, group);
-
-    auto func = [&](int32_t start, int32_t end)
-    {
-        for (int32_t i = start; i < end; ++i)
-        {
-            LocalTransform& transform = group.get<LocalTransform>(container[i]);
-            TransformSystem::Rotate(transform, Float3(fpm::fixed_16_16(0.0f), fpm::fixed_16_16(1.0f), fpm::fixed_16_16(0.0f)), fpm::fixed_16_16(50.0f) * TransformSystem::SIM_DT);
-        }
-    };
-
-    TaskScheduler::Get().ParallelForSync(group.size(), func);
+    player->RunSim(registry, tick);
+    UpdateTransformHierarchy();
 
     // for (const auto& cmd : CommandProcessor::Get().GetCommandsForTick(tick))
     // {
@@ -132,7 +121,8 @@ void World::CreateWorld()
 
     auto camEntity = registry.create();
     registry.emplace<Camera>(camEntity);
-    registry.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 0.f, -5.f) });
+    registry.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 30.f, -5.f) }.LookAt(glm::vec3(0.0f)));
+    registry.emplace<CameraGlobalTransform>(camEntity);
 
     for (int32_t i = 0; i < 1; ++i)
     {
@@ -140,34 +130,37 @@ void World::CreateWorld()
         // const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
 
         //  const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f));
-        const Float3 pos = Float3(fpm::fixed_16_16(5.0f), fpm::fixed_16_16(0.0f), fpm::fixed_16_16(5.0f));
+        const Float3 pos = Float3(fpm::fixed_16_16(5.0f), 0, 0);
 
         entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/sphere.glb"), pos, Float3{}, true);
     }
 
-    for (int32_t i = 0; i < 1; ++i)
+    for (int32_t i = 0; i < 15000; ++i)
     {
-        // const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
-        // const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
+        const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
+        const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
 
-        // const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f));
-        // const Float3 pos = Float3(row * fpm::fixed_16_16(3.0f), fpm::fixed_16_16(0.0f), col * fpm::fixed_16_16(3.0f));
+        const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), 0, 0);
+        const Float3 pos = Float3(row * fpm::fixed_16_16(5.0f), 0, col * fpm::fixed_16_16(5.0f));
 
-        entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/cube.glb"));
+        entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/cube.glb"), pos, rot, true);
     }
 }
 
-void World::UpdateTransformHierarchy(const entt::entity* storage, auto& group)
+void World::UpdateTransformHierarchy()
 {
+    auto group = registry.group<LocalTransform, GlobalTransform, Hierarchy>();
+    const entt::entity* storage = registry.storage<LocalTransform>().data();
+
     auto func = [&group, &storage](int32_t start, int32_t end)
     {
         for (int32_t i = start; i < end; ++i)
         {
             const auto entity = storage[i];
 
-            LocalTransform& local = group.template get<LocalTransform>(entity);
-            Hierarchy& h = group.template get<Hierarchy>(entity);
-            GlobalTransform& global = group.template get<GlobalTransform>(entity);
+            LocalTransform& local = group.get<LocalTransform>(entity);
+            Hierarchy& h = group.get<Hierarchy>(entity);
+            GlobalTransform& global = group.get<GlobalTransform>(entity);
 
             if (local.dirty == 0)
             {
@@ -182,28 +175,66 @@ void World::UpdateTransformHierarchy(const entt::entity* storage, auto& group)
             }
             else
             {
-                GlobalTransform& parentGlobal = group.template get<GlobalTransform>(h.parent);
+                GlobalTransform& parentGlobal = group.get<GlobalTransform>(h.parent);
                 global.matrix = parentGlobal.matrix * local.LocalMatrix();
             }
         }
     };
 
     TaskScheduler::Get().ParallelForSync(group.size(), func);
+
+    // Updating the cameras here as well
+    auto camGroup = registry.group<CameraTransform, CameraGlobalTransform>(entt::get<Camera>);
+    const float aspectRatio = RenderingSystem::Get().GetAspectRatio();
+
+    auto updateCamTransform = [&camGroup, &aspectRatio](CameraTransform& transform, CameraGlobalTransform& global, const Camera& cam)
+    {
+        if ((transform.flags & PROJECTION_CHANGED) != 0)
+        {
+            transform.flags &= ~PROJECTION_CHANGED;
+            global.projection = Camera::CalculateProjection(cam, aspectRatio);
+            global.projectionView = global.projection * global.view;
+        }
+
+        if ((transform.flags & VIEW_CHANGED) != 0)
+        {
+            transform.flags &= ~VIEW_CHANGED;
+
+            transform.right = Camera::Right(transform);
+            transform.forward = Camera::Forward(transform);
+            transform.up = Camera::Up(transform);
+
+            global.view = Camera::CalculateView(transform);
+            global.projectionView = global.projection * global.view;
+        }
+    };
+
+    camGroup.each(updateCamTransform);
 }
 
 void World::SyncSimTransformToRenderTransform()
 {
-    auto view = registry.view<GlobalTransform, RenderTransform>();
+    auto view = registry.view<RenderTransform, GlobalTransform>();
+    auto& storage = registry.storage<RenderTransform>();
 
-    auto func = [&](GlobalTransform& global, RenderTransform& render)
+    const entt::entity* entities = storage.data();
+    const int32_t size = storage.size();
+
+    auto func = [&view, &entities](int32_t start, int32_t end)
     {
-        render.prevPos = render.currentPos;
-        render.prevRot = render.currentRot;
+        for (int32_t i = start; i < end; ++i)
+        {
+            const GlobalTransform& global = view.get<GlobalTransform>(entities[i]);
+            RenderTransform& render = view.get<RenderTransform>(entities[i]);
 
-        TransformSystem::ExtractPosRot(global.matrix, render.currentPos, render.currentRot);
+            render.prevPos = render.currentPos;
+            render.prevRot = render.currentRot;
+
+            TransformSystem::ExtractPosRot(global.matrix, render.currentPos, render.currentRot);
+        }
     };
 
-    view.each(func);
+    TaskScheduler::Get().ParallelForSync(size, func);
 }
 
 void World::GCPass()

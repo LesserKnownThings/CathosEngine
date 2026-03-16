@@ -1,31 +1,26 @@
 #pragma once
 
-#include "Math/Matrices.h"
-#include "Math/Quaternions.h"
-#include "Math/Vectors.h"
-#include "fpm/fixed.hpp"
+#include "Math/FixedMath.hpp"
 #include <entt/entt.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
 
 struct LocalTransform
 {
     Quat rotation;
     Float3 position;
-    Float3 scale{ fpm::fixed_16_16(1.0f) };
+    Float3 scale{ 1.0f };
 
     // Starts with true so we can compute the global matrix
     uint8_t dirty = 1;
 
     Mat4 LocalMatrix() const
     {
-        return glm::translate(Mat4(fpm::fixed_16_16(1.0f)), position) * glm::mat4_cast(rotation) * glm::scale(Mat4(fpm::fixed_16_16(1.0f)), scale);
+        return glm::translate(Mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(Mat4(1.0f), scale);
     }
 };
 
 struct GlobalTransform
 {
-    Mat4 matrix{ fpm::fixed_16_16(1.0f) };
+    Mat4 matrix{ 1.0f };
 };
 
 // Used to interpolate the sim positons to render positions

@@ -1,5 +1,6 @@
 #include "World.h"
 
+#include "Components/Color.h"
 #include "Components/Transform.h"
 #include "Game/Camera.h"
 #include "Game/CommandProcessor.h"
@@ -124,26 +125,61 @@ void World::CreateWorld()
     registry.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 30.f, -5.f) }.LookAt(glm::vec3(0.0f)));
     registry.emplace<CameraGlobalTransform>(camEntity);
 
-    for (int32_t i = 0; i < 1; ++i)
-    {
-        // const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
-        // const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
-
-        //  const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), fpm::fixed_16_16(0.f), fpm::fixed_16_16(0.0f));
-        const Float3 pos = Float3(fpm::fixed_16_16(5.0f), 0, 0);
-
-        entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/sphere.glb"), pos, Float3{}, true);
-    }
-
-    for (int32_t i = 0; i < 15000; ++i)
+    for (int32_t i = 0; i < 200; ++i)
     {
         const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
         const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
 
         const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), 0, 0);
-        const Float3 pos = Float3(row * fpm::fixed_16_16(5.0f), 0, col * fpm::fixed_16_16(5.0f));
+        const Float3 pos = Float3(row * fpm::fixed_16_16(3.0f), 0, col * fpm::fixed_16_16(3.0f));
 
-        entt::entity parent = SceneSystem::CreateScene(registry, AssetPath("Data/Meshes/cube.glb"), pos, rot, true);
+        SceneSystem::SceneData data{
+            AssetPath("Data/Meshes/sphere.glb"),
+            AssetPath{},
+            Color::YELLOW,
+            pos,
+            rot
+        };
+
+        entt::entity parent = SceneSystem::CreateScene(registry, data);
+    }
+
+    for (int32_t i = 0; i < 200; ++i)
+    {
+        const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
+        const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
+
+        const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), 0, 0);
+        const Float3 pos = Float3(row * fpm::fixed_16_16(3.0f), 0, col * fpm::fixed_16_16(3.0f)) + Float3(40.f, 0.f, 0.f);
+
+        SceneSystem::SceneData data{
+            AssetPath("Data/Meshes/cube.glb"),
+            AssetPath{},
+            Color::BLUE,
+            pos,
+            rot
+        };
+
+        entt::entity parent = SceneSystem::CreateScene(registry, data);
+    }
+
+    for (int32_t i = 0; i < 200; ++i)
+    {
+        const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
+        const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
+
+        const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), 0, 0);
+        const Float3 pos = Float3(row * fpm::fixed_16_16(3.0f), 0, col * fpm::fixed_16_16(3.0f)) + Float3(20.f, 0.f, 0.f);
+
+        SceneSystem::SceneData data{
+            AssetPath("Data/Meshes/cube.glb"),
+            AssetPath{},
+            Color::BLACK,
+            pos,
+            rot
+        };
+
+        entt::entity parent = SceneSystem::CreateScene(registry, data);
     }
 }
 

@@ -1,13 +1,14 @@
 #pragma once
 
-#include "Rendering/VkContext.h"
-
+#include "Rendering/VkData.h"
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <vector>
 #include <volk.h>
 #include <vulkan/vulkan_core.h>
+
+struct VkContext;
 
 enum class EPipelineType : uint8_t
 {
@@ -40,7 +41,7 @@ struct CameraUV
 class RenderPipeline
 {
   public:
-    virtual ~RenderPipeline();
+    virtual ~RenderPipeline() = default;
     RenderPipeline(const VkContext& inContext);
     virtual void Destroy();
 
@@ -60,6 +61,10 @@ class RenderPipeline
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
 
+    std::vector<VkDescriptorSet> descriptorSets;
     std::vector<DescriptorBindingInfo> descriptorBindings;
     std::vector<DescriptorSetLayoutInfo> descriptorLayouts;
+
+    const std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT,
+                                                        VK_DYNAMIC_STATE_SCISSOR };
 };

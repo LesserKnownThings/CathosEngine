@@ -1,26 +1,18 @@
 #pragma once
 
 #include "RenderPipeline.h"
-#include "Rendering/VkContext.h"
 
-#include <array>
 #include <string>
-#include <vulkan/vulkan_core.h>
+
+struct VkContext;
 
 class PBRPipeline : public RenderPipeline
 {
   public:
     PBRPipeline(const VkContext& inContext);
 
-    virtual void Bind(VkCommandBuffer buffer) override;
-
-    virtual EPipelineType GetType() const override;
+    EPipelineType GetType() const override { return EPipelineType::PBR; }
 
   private:
-    const std::string shaderPath = "Data/Shaders/PBR";
-
-    std::array<VkDescriptorSet, 2> descriptorSets;
-
-    std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT,
-                                                  VK_DYNAMIC_STATE_SCISSOR };
+    const std::string shaderPath = "Data/Engine/Shaders/PBR";
 };

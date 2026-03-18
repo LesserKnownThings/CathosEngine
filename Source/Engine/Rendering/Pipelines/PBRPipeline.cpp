@@ -2,28 +2,31 @@
 #include "Debug/DebugSystem.h"
 #include "Rendering/BindingDefinitions.h"
 #include "Rendering/DescriptorRegistry.h"
+#include "Rendering/Pipelines/RenderPipeline.h"
 #include "Rendering/RenderingSystem.h"
+#include "Rendering/VkContext.h"
 #include "Resources/Model.h"
 #include "Utilities/FileHelper.h"
 
 #include <array>
+#include <cstdint>
+#include <cstring>
+#include <glm/ext/vector_float4.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <string>
+#include <vector>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
 constexpr std::string PBR_LOG = "PBR";
 
-void PBRPipeline::Bind(VkCommandBuffer buffer)
-{
-    RenderPipeline::Bind(buffer);
-
-    vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
-                            descriptorSets.size(), descriptorSets.data(), 0, nullptr);
-}
+constexpr int32_t PBR_DESCRIPTOR_SETS = 3;
+constexpr int32_t PBR_SHADER_STAGES = 2;
 
 PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
 {
     // SHADER STAGES
-    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
+    std::array<VkPipelineShaderStageCreateInfo, PBR_SHADER_STAGES> shaderStages{};
 
     // Vertex
     const std::string vertShaderPath = shaderPath + "/vert.spv";
@@ -195,7 +198,8 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.pNext = nullptr;
 
-    std::array<VkDescriptorSetLayout, 2> descriptorSetLayouts{};
+    std::array<VkDescriptorSetLayout, PBR_DESCRIPTOR_SETS> descriptorSetLayouts{};
+    descriptorSets.resize(PBR_DESCRIPTOR_SETS);
     const DescriptorRegistry& registry = RenderingSystem::GetRegistry();
 
     Descriptor universal{};
@@ -210,6 +214,13 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     {
         descriptorSetLayouts[1] = instance.layout;
         descriptorSets[1] = instance.set;
+    }
+
+    Descriptor textures{};
+    if (registry.GetDescriptor(TextureBinding::INDEX, textures))
+    {
+        descriptorSetLayouts[2] = textures.layout;
+        descriptorSets[2] = textures.set;
     }
 
     // std::array<VkPushConstantRange, 1> pushConstants{};
@@ -271,9 +282,4 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     {
         vkDestroyShaderModule(context.device, stage.module, nullptr);
     }
-}
-
-EPipelineType PBRPipeline::GetType() const
-{
-    return EPipelineType::PBR;
 }

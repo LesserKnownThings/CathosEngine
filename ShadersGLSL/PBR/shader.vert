@@ -18,8 +18,11 @@ layout (set = 1, binding = 0) readonly buffer InstanceBuffer {
 } instanceBuffer; 
 
 layout (location = 0) out vec2 fragUV;
+layout (location = 1) flat out int vInstanceIndex; 
 
 void main() {
+    vInstanceIndex = gl_InstanceIndex;
+    
     mat4 model = instanceBuffer.models[gl_InstanceIndex];
     gl_Position = camera.projectionView * model * vec4(position, 1.0);
     fragUV = uv;

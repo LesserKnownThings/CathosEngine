@@ -5,59 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Server",
+            "name": "Debug",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/Build/Linux/Debug/CathosEngine",
             "args": ["server"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ]
-        },
-        {
-            "name": "Launch Listen Server",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/Build/Linux/Debug/CathosEngine",
-            "args": ["server", "listen"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ]
-        },
-        {
-            "name": "Launch Client",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/Build/Linux/Debug/CathosEngine",
-            "args": ["client", "127.0.0.1"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

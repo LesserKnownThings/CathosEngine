@@ -3,6 +3,8 @@
 #include "Resources/AssetPath.h"
 #include "Resources/ResourceCache.h"
 #include <cstdint>
+#include <entt/core/fwd.hpp>
+#include <entt/core/type_info.hpp>
 #include <entt/resource/cache.hpp>
 #include <entt/resource/resource.hpp>
 #include <memory>
@@ -15,9 +17,10 @@ struct AssetLoader
 {
     using result_type = std::shared_ptr<T>;
 
-    result_type operator()(const AssetPath& path)
+    template <typename... Args>
+    result_type operator()(Args&&... args)
     {
-        return std::make_shared<T>(path);
+        return std::make_shared<T>(std::forward<Args>(args)...);
     }
 };
 
@@ -52,19 +55,34 @@ class AssetServer
     AssetServer(const AssetServer&) = delete;
     AssetServer& operator=(const AssetServer&) = delete;
 
-    template <typename T>
-    entt::resource<T> Load(const AssetPath& path)
+    template <typename T, typename... Args>
+    entt::resource<T> Load(const AssetPath& path, Args... args)
     {
-        ResourceCacheProxy<T>& proxy = GetOrCreateCache<T>(path);
+        ResourceCacheProxy<T>& proxy = GetOrCreateCache<T>(entt::type_id<T>().index());
 
-        auto result = proxy.cache.load(path.GetHash(), path);
+        auto result = proxy.cache.load(
+            path.GetHash(),
+            path,
+            std::forward<args>(args)...);
+
+        return result.first->second;
+    }
+
+    // This one requires you create your own hash like "my_asset"_hs
+    template <typename T, typename... Args>
+    entt::resource<T> Load(uint64_t id, Args... args)
+    {
+        ResourceCacheProxy<T>& proxy = GetOrCreateCache<T>(entt::type_id<T>().index());
+        auto result = proxy.cache.load(
+            id,
+            std::forward<Args>(args)...);
 
         return result.first->second;
     }
 
     void GCPass()
     {
-        for (auto& [path, ptr] : caches)
+        for (auto& [path, ptr] : cache)
         {
             ptr->PurgeUnused();
         }
@@ -72,15 +90,15 @@ class AssetServer
 
   private:
     template <typename T>
-    ResourceCacheProxy<T>& GetOrCreateCache(const AssetPath& path)
+    ResourceCacheProxy<T>& GetOrCreateCache(uint32_t id)
     {
-        if (caches.find(path) == caches.end())
+        if (cache.find(id) == cache.end())
         {
-            caches.emplace(path, std::move(std::make_unique<ResourceCacheProxy<T>>()));
+            cache.emplace(id, std::move(std::make_unique<ResourceCacheProxy<T>>()));
         }
 
-        return static_cast<ResourceCacheProxy<T>&>(*caches[path]);
+        return static_cast<ResourceCacheProxy<T>&>(*cache[id]);
     }
 
-    std::unordered_map<AssetPath, std::unique_ptr<IResourceCache>> caches;
+    std::unordered_map<uint32_t, std::unique_ptr<IResourceCache>> cache;
 };

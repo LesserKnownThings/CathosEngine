@@ -4,10 +4,6 @@
 #include <iostream>
 #include <vulkan/vulkan_core.h>
 
-RenderPipeline::~RenderPipeline()
-{
-}
-
 RenderPipeline::RenderPipeline(const VkContext& inContext) : context(inContext)
 {
 }
@@ -26,6 +22,8 @@ void RenderPipeline::Destroy()
 void RenderPipeline::Bind(VkCommandBuffer buffer)
 {
     vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
+                            descriptorSets.size(), descriptorSets.data(), 0, nullptr);
 }
 
 VkShaderModule RenderPipeline::CreateShaderModule(const std::vector<char>& code)

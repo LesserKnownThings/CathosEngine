@@ -15,7 +15,17 @@ namespace InstanceBinding
 {
 constexpr uint32_t INDEX = 1;
 constexpr uint32_t SET = 1;
-constexpr uint32_t BINDING_COUNT = 1;
+constexpr uint32_t BINDING_COUNT = 2;
 
 constexpr uint32_t MODELS = 0;
+constexpr uint32_t MATERIALS = 1;
 } // namespace InstanceBinding
+
+namespace TextureBinding
+{
+constexpr uint32_t INDEX = 2;
+constexpr uint32_t SET = 2;
+constexpr uint32_t BINDING_COUNT = 1;
+
+constexpr uint32_t TEXTURES = 0;
+} // namespace TextureBinding

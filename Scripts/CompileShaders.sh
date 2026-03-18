@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
 SOURCE_DIR="$PARENT_DIR/ShadersGLSL"
-DEST_DIR="$PARENT_DIR/Data/Shaders"
+DEST_DIR="$PARENT_DIR/Data/Engine/Shaders"
 
 mkdir -p "$DEST_DIR"
 

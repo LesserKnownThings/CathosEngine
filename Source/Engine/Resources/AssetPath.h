@@ -7,7 +7,8 @@
 
 struct AssetPath
 {
-    AssetPath() = delete;
+    // Creates an invalid asset path, might be useful
+    AssetPath() : hash(0) {}
     AssetPath(const std::string& inPath)
         : path(inPath), hash(Hash::FNV1Hash(inPath))
     {

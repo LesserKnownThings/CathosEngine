@@ -69,17 +69,6 @@ void Player::HandleMouseRelease(uint32_t button)
 {
     if (button == 1)
     {
-        Message msg{};
-
-        ChatMsg& chatMsg = msg.CreateChat();
-        chatMsg.message = "Hello there!";
-
-        uint8_t* buffer;
-        int32_t size;
-
-        MessagePacker::PackMessage(msg, buffer, size);
-        NetworkManager::Get().SendMessage(buffer, size);
-
         isMouseDown = false;
     }
     else if (button == 2)

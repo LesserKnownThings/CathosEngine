@@ -15,6 +15,7 @@
 #include <glm/ext/vector_float2.hpp>
 #include <glm/ext/vector_int2.hpp>
 #include <optional>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -34,6 +35,9 @@ constexpr int32_t MAX_SWAPCHAIN_IMAGES = 3;
 constexpr uint32_t NVIGIA_GPU = 0x10DE;
 constexpr uint32_t AMD_GPU = 0x1002;
 constexpr uint32_t INTEL_GPU = 0x8086;
+
+constexpr int32_t MAX_INSTANCE_BUFFER = 20000;
+constexpr int32_t MAX_TEXTURE_COUNT = 1000;
 
 struct SwapChainSupportDetails
 {
@@ -86,6 +90,9 @@ class RenderingSystem
     void Shutdown();
 
     void BeginFrame();
+
+    // This draw function only supports isntanced drawing
+    // It will batch both materials and meshes and do an instance drawing based on that
     void Draw(entt::registry& registry, float alpha);
     void EndFrame();
 
@@ -100,17 +107,10 @@ class RenderingSystem
     }
     void UnmapMemory(VmaAllocation allocation);
 
-    void UpdateEntireChunkTexture(const AllocatedTexture& texture, void* data, int32_t width,
-                                  int32_t height, int32_t layerIndex);
-    void UpdateChunkTexture(const AllocatedTexture& texture, void* data, int32_t x, int32_t y,
-                            uint32_t width, uint32_t height, int32_t layerIndex);
+    void CreateSRGBATexture(TextureData& textureData, void* pixels);
 
-    void CreateTexture(const TextureData& textureData, void* pixels, AllocatedTexture& outTexture,
-                       bool keepStagingBuffer = false);
     MeshGPUData CreateMesh(const MeshData& meshData);
     void DestroyMesh(const MeshGPUData& mesh);
-
-    void UpdateCameraMatrix(const glm::mat4& projectionView);
 
     float GetScreenWidth() const
     {
@@ -211,10 +211,15 @@ class RenderingSystem
 
     void CreateUniversalDescriptors();
     void CreateInstanceDescriptors();
+    void CreateTextureDescriptors();
 
-    void CreateDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& outSet);
+    void AllocateDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& outSet, VkDescriptorPool pool, const void* next = nullptr);
     void UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set, AllocatedBuffer buffer,
                              uint32_t binding = 0);
+
+    void UpdateCameraMatrix(const glm::mat4& projectionView);
+    uint32_t GetOrCreateTextureIndex();
+    void ReturnTextureIndex(uint32_t index);
 
     void HandleWindowResized();
     void HandleWindowMinimized();
@@ -236,6 +241,10 @@ class RenderingSystem
 
     uint32_t currentFrame = 0;
     uint32_t imageIndex = 0;
+
+    // Texture index tracking
+    int32_t currentTextureIndex = 0;
+    std::queue<int32_t> cachedTextureIndices;
 
     std::vector<Frame> renderFrames;
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> additiveFrameBuffers;

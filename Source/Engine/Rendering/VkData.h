@@ -16,7 +16,4 @@ struct AllocatedTexture
     VkImageView view;
     VkSampler sampler;
     VmaAllocation memory;
-
-    // Some textures need the staging buffer for later use
-    AllocatedBuffer* stagingBuffer = nullptr;
 };

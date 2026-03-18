@@ -3,6 +3,7 @@
 #include <optional>
 #include <vk_mem_alloc.h>
 #include <volk.h>
+#include <vulkan/vulkan_core.h>
 
 struct QueueFamilyIndices
 {
@@ -40,6 +41,7 @@ struct VkContext
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkRenderPass additivePass = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorPool bindlessPool;
 
     QueueFamilyIndices familyIndices;
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;

@@ -2,6 +2,8 @@
 #include <latch>
 #include <thread>
 
+constexpr int32_t MIN_WORK_PER_THREAD = 30;
+
 TaskScheduler& TaskScheduler::Get()
 {
     static TaskScheduler instace;
@@ -34,29 +36,33 @@ void TaskScheduler::ParallelForSync(int32_t elementCount, std::function<void(int
     if (elementCount == 0)
         return;
 
-    const int32_t baseChunk = elementCount / nThreads;
-    const int32_t remainder = elementCount % nThreads;
+    const int32_t numTasks = std::min(nThreads, elementCount / MIN_WORK_PER_THREAD);
 
-    std::latch sync(nThreads);
+    if (numTasks <= 1)
+    {
+        work(0, elementCount);
+        return;
+    }
+
+    const int32_t baseChunk = elementCount / numTasks;
+    const int32_t remainder = elementCount % numTasks;
+
+    std::latch sync(numTasks);
 
     int32_t currentStart = 0;
-    for (int32_t i = 0; i < nThreads; ++i)
+    for (int32_t i = 0; i < numTasks; ++i)
     {
         int32_t chunkSize = baseChunk + (i < remainder ? 1 : 0);
         int32_t start = currentStart;
         int32_t end = start + chunkSize;
         currentStart = end;
 
-        if (start == end)
+        auto taskFunc = [&sync, start, end, &work]
         {
-            sync.count_down();
-            continue;
-        }
-
-        AddTask([&sync, start, end, &work]
-                {
             work(start, end);
-            sync.count_down(); });
+            sync.count_down();
+        };
+        AddTask(taskFunc);
     }
 
     sync.wait();

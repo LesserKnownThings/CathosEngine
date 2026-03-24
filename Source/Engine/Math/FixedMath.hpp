@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #define GLM_FORCE_PURE
 #define GLM_FORCE_INLINE
@@ -65,6 +66,20 @@ inline FixedT abs(FixedT x) { return x < FixedT(0) ? -x : x; }
 inline FixedT floor(FixedT x) { return FixedT(fpm::floor(static_cast<fpm::fixed<int32_t, long, 16>>(x))); }
 inline FixedT ceil(FixedT x) { return FixedT(fpm::ceil(static_cast<fpm::fixed<int32_t, long, 16>>(x))); }
 } // namespace glm
+
+namespace std
+{
+template <>
+class numeric_limits<FixedT>
+{
+  public:
+    static constexpr bool is_specialized = true;
+    static constexpr bool is_signed = true;
+    static constexpr bool is_integer = false;
+    static constexpr bool is_exact = true;
+    static constexpr bool is_iec559 = true;
+};
+} // namespace std
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

@@ -1,5 +1,6 @@
 {
     "clangd.arguments": [
-        "--compile-commands-dir=Build/Linux/Debug",
+        //Using the map editor because it has more includes
+        "--compile-commands-dir=Build/Linux/MapEditor/Debug",
     ]
 }

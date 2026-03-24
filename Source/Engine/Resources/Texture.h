@@ -7,9 +7,6 @@
 
 struct TextureData
 {
-    AllocatedTexture renderTexture;
-    // Index in the descriptor buffer
-    int32_t textureIndex;
     int32_t width;
     int32_t height;
     int32_t channels;
@@ -20,13 +17,17 @@ struct Texture2D
 {
     ~Texture2D()
     {
-        RenderingSystem::Get().DestroyTexture(data.renderTexture);
+        RenderingSystem::Get().DestroyTexture(renderTexture);
     }
 
     Texture2D(const AssetPath& path)
     {
-        TextureImporter::ImportTexture(path, data);
+        TextureImporter::ImportTexture(path.GetPath(), this);
     }
 
     TextureData data;
+    AllocatedTexture renderTexture;
+
+    // Index in the descriptor buffer
+    int32_t textureIndex;
 };

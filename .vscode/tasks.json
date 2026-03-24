@@ -14,7 +14,30 @@
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_CXX_COMPILER=clang++",
                 "-DCMAKE_C_COMPILER=clang",
-                "-DCMAKE_BUILD_TYPE=Debug"
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DMAP_EDITOR=0"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Linux Map Editor Debug Config",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "Build/Linux/MapEditor/Debug",
+                "-S", ".",
+                "-G Ninja",
+                "-DCMAKE_TOOLCHAIN_FILE=/home/mursu/Documents/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "-DVCPKG_TARGET_TRIPLET=x64-linux",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DCMAKE_CXX_COMPILER=clang++",
+                "-DCMAKE_C_COMPILER=clang",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DMAP_EDITOR=1"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

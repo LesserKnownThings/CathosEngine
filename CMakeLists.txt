@@ -9,6 +9,11 @@ set(GLOBAL_SOURCES "")
 file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/Source/*.cpp")
 list(APPEND GLOBAL_SOURCES ${SOURCES})
 
+if (MAP_EDITOR)
+    file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/MapEditor/*.cpp")
+    list(APPEND GLOBAL_SOURCES ${SOURCES})
+endif()
+
 # THIRD PARTIES
 add_compile_definitions(
     GLM_FORCE_LEFT_HANDED
@@ -29,6 +34,17 @@ find_package(Tracy REQUIRED)
 add_executable(CathosEngine ${GLOBAL_SOURCES})
 
 target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/Source/Engine)
+target_compile_definitions(CathosEngine PUBLIC VK_NO_PROTOTYPES)
+
+option(MAP_EDITOR "Enable Map Editor" OFF)
+
+if (MAP_EDITOR)
+    target_compile_definitions(CathosEngine PUBLIC MAP_EDITOR=1 IMGUI_IMPL_VULKAN_USE_VOLK)
+    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/MapEditor)
+    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/MapEditor/imgui)
+else()
+    target_compile_definitions(CathosEngine PUBLIC MAP_EDITOR=0)
+endif()
 
 target_link_libraries(CathosEngine
 PRIVATE

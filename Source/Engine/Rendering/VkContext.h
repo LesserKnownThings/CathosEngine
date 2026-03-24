@@ -41,7 +41,7 @@ struct VkContext
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkRenderPass additivePass = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkDescriptorPool bindlessPool;
+    VkDescriptorPool bindlessPool = VK_NULL_HANDLE;
 
     QueueFamilyIndices familyIndices;
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;

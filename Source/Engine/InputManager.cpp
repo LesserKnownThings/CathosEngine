@@ -6,6 +6,10 @@
 #include <SDL3/SDL_scancode.h>
 #include <glm/common.hpp>
 
+#if MAP_EDITOR
+#include <backends/imgui_impl_sdl3.h>
+#endif
+
 InputManager& InputManager::Get()
 {
     static InputManager instance{};
@@ -36,6 +40,10 @@ void InputManager::PollInput()
 
     while (SDL_PollEvent(&e))
     {
+#if MAP_EDITOR
+        ImGui_ImplSDL3_ProcessEvent(&e);
+#endif
+
         if (e.type == SDL_EVENT_QUIT)
         {
             onCloseGame.invoke();

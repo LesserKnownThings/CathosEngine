@@ -3,6 +3,13 @@
 #include "Math/FixedMath.hpp"
 #include <entt/entt.hpp>
 
+struct Transform
+{
+    Float3 position;
+    Float3 eulers;
+    Float3 scale{ 1.0f };
+};
+
 struct LocalTransform
 {
     Quat rotation;
@@ -23,7 +30,7 @@ struct GlobalTransform
     Mat4 matrix{ 1.0f };
 };
 
-// Used to interpolate the sim positons to render positions
+// Used to interpolate the sim transform to render transform
 struct RenderTransform
 {
     Quat prevRot;
@@ -31,6 +38,8 @@ struct RenderTransform
 
     Float3 prevPos;
     Float3 currentPos;
+    Float3 prevScale;
+    Float3 currentScale;
 };
 
 struct Hierarchy
@@ -39,19 +48,4 @@ struct Hierarchy
     entt::entity firstChild = entt::null;
     entt::entity nextSibling = entt::null;
     int32_t depth = 0;
-
-    static void LinkEntities(entt::registry& registry, entt::entity child, entt::entity parent)
-    {
-        auto& childH = registry.get<Hierarchy>(child);
-        auto& parentH = registry.get<Hierarchy>(parent);
-
-        childH.parent = parent;
-
-        if (parentH.firstChild != entt::null)
-        {
-            childH.nextSibling = parentH.firstChild;
-        }
-
-        parentH.firstChild = child;
-    }
 };

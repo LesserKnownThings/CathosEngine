@@ -1,29 +1,29 @@
 #pragma once
 
 #include "Components/Transform.h"
+#include "Components/Visibility.h"
+#include "Math/TransformMath.hpp"
+#include "Registry/CommandBuffer.h"
+#include "Registry/Registry.h"
 #include "Resources/AssetPath.h"
 #include "Resources/AssetServer.h"
 #include "Resources/MaterialMesh3D.h"
 #include "Resources/Model.h"
 #include "Resources/Texture.h"
-#include "Systems/TransformSystem.h"
 #include <cstdint>
 #include <entt/entt.hpp>
 #include <entt/resource/resource.hpp>
 #include <string>
 
-namespace SceneSystem
-{
 struct SceneData
 {
     AssetPath mesh;
     AssetPath material;
     glm::vec4 albedoColor;
-    Float3 pos;
-    Float3 eulers;
-    int32_t count;
 };
 
+namespace SceneUtilities
+{
 inline uint64_t GetVec4Hash(const glm::vec4& v)
 {
     uint32_t r = static_cast<uint32_t>(v.x);
@@ -46,50 +46,52 @@ inline uint64_t CombineHashes(uint64_t h1, uint64_t h2)
 // Creates a scene
 // A scene is a hierarchy of meshes, they're still separate entities
 // This is a utility function, it should not be used to create everyhting, most meshes are single entities so you can create them yourself
-inline entt::entity CreateScene(entt::registry& registry, const SceneData& data)
+inline void CreateScene(Registry* registry, CommandBuffer& cmd, const Transform transform, const SceneData& data)
 {
-    AssetServer& as = registry.ctx().get<AssetServer>();
+    entt::registry& reg = registry->Get();
+
+    AssetServer& as = reg.ctx().get<AssetServer>();
     auto meshRes = as.Load<Model>(data.mesh);
 
     const AssetPath baseTexture = data.material.IsValid() ? data.material : AssetPath("Data/Engine/Textures/base_albedo.png");
     auto texture = as.Load<Texture2D>(baseTexture);
     auto matHandle = as.Load<MaterialMesh3DHandle>(baseTexture.GetHash(), texture, data.albedoColor);
 
-    std::vector<entt::entity> parentStack{};
+    std::vector<uint32_t> parentStack{};
 
     for (int32_t i = 0; i < meshRes->meshes.size(); ++i)
     {
         const MeshGPUData& mesh = meshRes->meshes[i];
 
-        auto entity = registry.create();
-        registry.emplace<LocalTransform>(entity, LocalTransform{
-                                                     .rotation = TransformSystem::EulerToQuat(data.eulers),
-                                                     .position = data.pos,
+        uint32_t entity = cmd.CreateEntity();
+        cmd.AddComponent<LocalTransform>(entity, LocalTransform{
+                                                     .rotation = TransformMath::EulerToQuat(transform.eulers),
+                                                     .position = transform.position,
+                                                     .scale = transform.scale,
                                                  });
-
-        registry.emplace<GlobalTransform>(entity);
-        registry.emplace<RenderTransform>(entity);
-        registry.emplace<Hierarchy>(entity);
-        registry.emplace<Mesh>(entity, Mesh{ meshRes, static_cast<uint8_t>(i) });
-        registry.emplace<MaterialMesh3D>(entity, MaterialMesh3D{ matHandle, data.albedoColor });
+        cmd.AddComponent(entity, GlobalTransform{});
+        cmd.AddComponent(entity, RenderTransform{});
+        cmd.AddComponent(entity, Hierarchy{});
+        cmd.AddComponent(entity, Mesh{ meshRes, static_cast<uint8_t>(i) });
+        cmd.AddComponent(entity, MaterialMesh3D{ matHandle, data.albedoColor });
+        cmd.AddComponent(entity, Visible{});
 
         if (mesh.depth >= parentStack.size())
         {
-            parentStack.resize(mesh.depth + 1, entt::null);
+            parentStack.resize(mesh.depth + 1, INVALID_ENTITY);
         }
 
         parentStack[mesh.depth] = entity;
 
         if (mesh.depth > 0)
         {
-            entt::entity parent = parentStack[mesh.depth - 1];
+            uint32_t parent = parentStack[mesh.depth - 1];
 
-            if (parent != entt::null)
+            if (parent != INVALID_ENTITY)
             {
-                Hierarchy::LinkEntities(registry, entity, parent);
+                cmd.Link(entity, parent);
             }
         }
     }
-    return parentStack[0];
 }
-} // namespace SceneSystem
+} // namespace SceneUtilities

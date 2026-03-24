@@ -15,6 +15,7 @@
 #include "TaskScheduler.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <array>
@@ -52,6 +53,11 @@
 
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
+
+#if MAP_EDITOR
+#include <backends/imgui_impl_sdl3.h>
+#include <backends/imgui_impl_vulkan.h>
+#endif
 
 constexpr std::string VULKAN_LOG = "Vulkan";
 
@@ -243,25 +249,31 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
 
         struct RenderCommand
         {
-            MaterialMesh3D material;
-            Mesh mesh;
+            MaterialMesh3DHandle* material;
+            Model* mesh;
             entt::entity entity;
 
             bool operator<(const RenderCommand& other) const
             {
-                if (material.handle != other.material.handle)
-                    return material.handle < other.material.handle;
-                return mesh.handle < other.mesh.handle;
+                if (material != other.material)
+                    return material < other.material;
+                return mesh < other.mesh;
             }
         };
-
-        static std::vector<RenderCommand> queue(MAX_INSTANCE_BUFFER);
 
         auto view = registry.view<Mesh, MaterialMesh3D, RenderTransform>();
         const auto& meshStorage = registry.storage<Mesh>();
 
         const entt::entity* entities = meshStorage.data();
         const int32_t storageSize = meshStorage.size();
+
+        int32_t draws = 1;
+        if (storageSize > MAX_INSTANCE_BUFFER)
+        {
+            draws = storageSize / MAX_INSTANCE_BUFFER;
+        }
+
+        static std::vector<RenderCommand> queue(MAX_INSTANCE_BUFFER);
 
         auto createSortTable = [&view, &entities](int32_t start, int32_t end)
         {
@@ -270,11 +282,10 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
                 const Mesh& mesh = view.get<Mesh>(entities[i]);
                 const MaterialMesh3D& material = view.get<MaterialMesh3D>(entities[i]);
 
-                queue[i] = RenderCommand{
-                    material,
-                    mesh,
-                    entities[i]
-                };
+                queue[i] = std::move(RenderCommand{
+                    material.handle.handle().get(),
+                    mesh.handle.handle().get(),
+                    entities[i] });
             }
         };
 
@@ -301,13 +312,18 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
                 const glm::quat currRot = render.currentRot;
 
                 glm::vec3 interpolatedPos = glm::mix(render.prevPos, render.currentPos, alpha);
+                glm::vec3 interpolatedScale = glm::mix(render.prevScale, render.currentScale, alpha);
                 glm::quat interpolatedRot = glm::slerp(prevRot, currRot, alpha);
                 interpolatedRot = glm::normalize(interpolatedRot);
 
-                models[i] = (glm::translate(glm::mat4(1.0f), interpolatedPos) * glm::mat4_cast(interpolatedRot));
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), interpolatedPos);
+                model = model * glm::mat4_cast(interpolatedRot);
+                model = glm::scale(model, interpolatedScale);
+                models[i] = model;
+
                 materialData[i] = MaterialData{
                     mat.color,
-                    glm::ivec4(mat.handle->textureHandle->data.textureIndex, glm::ivec3(0))
+                    glm::ivec4(mat.handle->textureHandle->textureIndex, glm::ivec3(0))
                 };
             }
         };
@@ -339,8 +355,8 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
 
         while (batchStart < storageSize)
         {
-            const Mesh& mesh = queue[batchStart].mesh;
-            const MaterialMesh3D& material = queue[batchStart].material;
+            const Mesh& mesh = view.get<Mesh>(queue[batchStart].entity);
+            const MaterialMesh3D& material = view.get<MaterialMesh3D>(queue[batchStart].entity);
 
             if (mesh.handle != currentMeshHandle)
             {
@@ -365,8 +381,8 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
             int32_t batchSize = 1;
             while (batchStart + batchSize < storageSize)
             {
-                const Mesh& otherMesh = queue[batchStart + batchSize].mesh;
-                const MaterialMesh3D& otherMaterial = queue[batchStart + batchSize].material;
+                const Mesh& otherMesh = view.get<Mesh>(queue[batchStart + batchSize].entity);
+                const MaterialMesh3D& otherMaterial = view.get<MaterialMesh3D>(queue[batchStart + batchSize].entity);
 
                 if (otherMesh.handle != mesh.handle || otherMaterial.handle != material.handle)
                     break;
@@ -1583,6 +1599,48 @@ void RenderingSystem::DestroyMesh(const MeshGPUData& mesh)
     DestroyBuffer(mesh.indices);
 }
 
+#if MAP_EDITOR
+void RenderingSystem::InitImGui()
+{
+
+    // auto func = [](const char* function_name, void* vulkan_instance)
+    // {
+    //     return vkGetInstanceProcAddr(*(reinterpret_cast<VkInstance*>(vulkan_instance)), function_name);
+    // };
+
+    // ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_4, func, &context.instance);
+
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    ImGui::StyleColorsLight();
+    ImGuiStyle& style = ImGui::GetStyle();
+    float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+    style.ScaleAllSizes(main_scale);
+
+    ImGui_ImplSDL3_InitForVulkan(window);
+
+    ImGui_ImplVulkan_InitInfo info{};
+    info.Instance = context.instance;
+    info.PhysicalDevice = context.physicalDevice;
+    info.Device = context.device;
+    info.QueueFamily = context.familyIndices.graphicsFamily.value();
+    info.Queue = context.graphicsQueue;
+    info.DescriptorPoolSize = 500;
+    info.MinImageCount = 2;
+    info.ImageCount = 2;
+    info.Allocator = nullptr;
+    info.PipelineInfoMain.RenderPass = context.renderPass;
+    info.PipelineInfoMain.Subpass = 0;
+    info.PipelineInfoMain.MSAASamples = GetMaxUsableSampleCount();
+    info.ApiVersion = VK_API_VERSION_1_4;
+
+    ImGui_ImplVulkan_Init(&info);
+}
+#endif
+
 void RenderingSystem::AllocateDescriptorSet(VkDescriptorSetLayout layout,
                                             VkDescriptorSet& outSet, VkDescriptorPool pool, const void* next)
 {
@@ -1768,15 +1826,15 @@ void RenderingSystem::ReturnTextureIndex(uint32_t index)
     cachedTextureIndices.push(index);
 }
 
-void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
+void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
 {
     VkBuffer stagingBuffer;
     VmaAllocation stagingMemory;
-    const int32_t channels = textureData.channels;
+    const int32_t channels = texture->data.channels;
 
     // TODO usually textures have 1byte channels, but still need to make sure here
-    const VkDeviceSize textureSize = static_cast<VkDeviceSize>(textureData.width) *
-                                     static_cast<VkDeviceSize>(textureData.height) * channels;
+    const VkDeviceSize textureSize = static_cast<VkDeviceSize>(texture->data.width) *
+                                     static_cast<VkDeviceSize>(texture->data.height) * channels;
 
     CreateBuffer(textureSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
                  VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, stagingBuffer,
@@ -1794,7 +1852,7 @@ void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
     VkImage imageBuffer;
     VmaAllocation imageMemory;
 
-    CreateImage(textureData.width, textureData.height, 1, 1, VK_SAMPLE_COUNT_1_BIT,
+    CreateImage(texture->data.width, texture->data.height, 1, 1, VK_SAMPLE_COUNT_1_BIT,
                 VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                     VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -1807,7 +1865,7 @@ void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 0, 1);
 
     CopyBufferToImage(commandBuffer.commandBuffer, stagingBuffer, imageBuffer, 0, 0,
-                      textureData.width, textureData.height, 0, 1);
+                      texture->data.width, texture->data.height, 0, 1);
 
     EndSingleTimeCommands(commandBuffer);
 
@@ -1821,8 +1879,8 @@ void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 0, 1);
     EndSingleTimeCommands(commandBuffer);
 
-    textureData.renderTexture.image = imageBuffer;
-    textureData.renderTexture.memory = imageMemory;
+    texture->renderTexture.image = imageBuffer;
+    texture->renderTexture.memory = imageMemory;
 
     vmaDestroyBuffer(context.allocator, stagingBuffer, stagingMemory);
 
@@ -1837,7 +1895,7 @@ void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
     imageViewInfo.subresourceRange.baseArrayLayer = 0;
     imageViewInfo.subresourceRange.layerCount = 1;
 
-    if (vkCreateImageView(context.device, &imageViewInfo, nullptr, &textureData.renderTexture.view) != VK_SUCCESS)
+    if (vkCreateImageView(context.device, &imageViewInfo, nullptr, &texture->renderTexture.view) != VK_SUCCESS)
     {
         std::cerr << "Failed to create image view!" << std::endl;
     }
@@ -1864,7 +1922,7 @@ void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;
 
-    if (vkCreateSampler(context.device, &samplerInfo, nullptr, &textureData.renderTexture.sampler) != VK_SUCCESS)
+    if (vkCreateSampler(context.device, &samplerInfo, nullptr, &texture->renderTexture.sampler) != VK_SUCCESS)
     {
         std::cerr << "Failed tocreate image sampler!" << std::endl;
     }
@@ -1873,17 +1931,17 @@ void RenderingSystem::CreateSRGBATexture(TextureData& textureData, void* pixels)
 
     if (texturesIt != descriptorRegistry.descriptors.end())
     {
-        textureData.textureIndex = GetOrCreateTextureIndex();
+        texture->textureIndex = GetOrCreateTextureIndex();
         VkWriteDescriptorSet write{};
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureData.renderTexture.view;
-        imageInfo.sampler = textureData.renderTexture.sampler;
+        imageInfo.imageView = texture->renderTexture.view;
+        imageInfo.sampler = texture->renderTexture.sampler;
 
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = texturesIt->second.set;
         write.dstBinding = 0;
-        write.dstArrayElement = textureData.textureIndex;
+        write.dstArrayElement = texture->textureIndex;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
         write.pImageInfo = &imageInfo;

@@ -2,10 +2,15 @@
 
 #include "Callme/CallMe.h"
 #include "InputManager.h"
+#include "Rendering/RenderingSystem.h"
 #include "SDLLayer.h"
 #include "World.h"
 #include <SDL3/SDL_timer.h>
 #include <cstdint>
+
+#if MAP_EDITOR
+#include "MapWorld.h"
+#endif
 
 // TODO read from config what's the target FPS for the engine
 constexpr int32_t TARGET_FPS = 30;
@@ -33,13 +38,23 @@ Engine::Engine()
     instance = this;
 }
 
+#if MAP_EDITOR
+static MapWorld mapWorld{};
+#endif
+
 bool Engine::Initialize(int argc, const char* argv[])
 {
     isRunning = true;
 
-    defaultWorld = new World();
     isRunning &= SDLLayer::Init();
+    isRunning &= RenderingSystem::Get().Initialize();
+
+#if !MAP_EDITOR
+    defaultWorld = new World();
     isRunning &= defaultWorld->Initialize(argc, argv);
+#else
+    mapWorld.Init();
+#endif
 
     InputManager::Get().onCloseGame = CallMe::Delegate<void()>(new auto([this]()
                                                                         { isRunning = false; }));
@@ -65,6 +80,7 @@ bool Engine::Initialize(int argc, const char* argv[])
         accumulator += frameTime;
         netAccumulator += frameTime;
 
+#if !MAP_EDITOR
         defaultWorld->Run();
 
         while (accumulator >= SIM_STEP)
@@ -82,12 +98,19 @@ bool Engine::Initialize(int argc, const char* argv[])
         float alpha = static_cast<float>(accumulator) / static_cast<float>(SIM_STEP);
         defaultWorld->Render(alpha);
 
+        defaultWorld->EndFrameCommandBuffer();
+
         gcDelay += deltaTime;
         if (gcDelay >= GC_DELAY)
         {
             defaultWorld->GCPass();
             gcDelay = 0.0f;
         }
+#else
+        mapWorld.Run();
+        mapWorld.Render();
+        mapWorld.EndFrameCommandBuffer();
+#endif
     }
 
     return true;
@@ -96,7 +119,11 @@ bool Engine::Initialize(int argc, const char* argv[])
 void Engine::Shutdown()
 {
     SDLLayer::Shutdown();
+
+#if !MAP_EDITOR
     defaultWorld->Shutdown();
     delete defaultWorld;
     defaultWorld = nullptr;
+#else
+#endif
 }

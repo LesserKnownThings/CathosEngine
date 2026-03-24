@@ -1,10 +1,13 @@
 #pragma once
 
-#include "entt/entt.hpp"
-#include <entt/entity/fwd.hpp>
+#include "Registry/CommandBuffer.h"
+#include <entt/entt.hpp>
+#include <functional>
 
 class Player;
 class RenderingSystem;
+class Registry;
+class CommandBuffer;
 
 class World
 {
@@ -19,16 +22,15 @@ class World
     void RunSim(uint32_t tick);
     void Render(float alpha);
 
+    void EndFrameCommandBuffer();
+
     void GCPass();
 
   private:
     World() = default;
 
-    void CameraMovement();
-    void UpdateTransformHierarchy();
-    void SyncSimTransformToRenderTransform();
-
-    entt::registry registry;
+    Registry* registry = nullptr;
+    CommandBuffer globalCmd{};
 
     Player* player = nullptr;
 

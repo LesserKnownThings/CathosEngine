@@ -24,9 +24,13 @@
 #include <vulkan/vulkan_core.h>
 
 struct View;
-struct TextureData;
+struct Texture2D;
 struct MeshData;
 struct MeshGPUData;
+
+#if MAP_EDITOR
+struct ImGui_ImplVulkan_InitInfo;
+#endif
 
 constexpr int32_t MAX_FRAMES_IN_FLIGHT = 2;
 // Only supporting double buffering for smoother movement
@@ -107,10 +111,15 @@ class RenderingSystem
     }
     void UnmapMemory(VmaAllocation allocation);
 
-    void CreateSRGBATexture(TextureData& textureData, void* pixels);
+    void CreateSRGBATexture(Texture2D* textureData, void* pixels);
 
     MeshGPUData CreateMesh(const MeshData& meshData);
     void DestroyMesh(const MeshGPUData& mesh);
+
+#if MAP_EDITOR
+    void InitImGui();
+    VkCommandBuffer GetCurrentCommandBuffer() const { return GetCurrentFrame().commandBuffer; }
+#endif
 
     float GetScreenWidth() const
     {

@@ -2,26 +2,34 @@
 #include "Callme/CallMe.h"
 #include "Debug/DebugSystem.h"
 #include "InputManager.h"
+#include "Math/TransformMath.hpp"
 #include "Netcode/Message.h"
 #include <cstdint>
+#include <entt/entity/fwd.hpp>
 #include <entt/entt.hpp>
 #include <glm/ext/quaternion_geometric.hpp>
 #include <glm/geometric.hpp>
 #include <string>
-
-#include "Netcode/NetworkManager.h"
-#include "Systems/TransformSystem.h"
+#include "Registry/Registry.h"
 
 #include "Game/Camera.h"
 
 constexpr std::string PLAYER_LOG = "Player";
 
-Player::Player()
+Player::Player(Registry* inRegistry)
+    : registry(inRegistry)
 {
     InputManager& im = InputManager::Get();
     static auto mouseClickHandle = im.onMouseClicked.subscribe(CallMe::fromMethod<&Player::HandleMouseClick>(this));
     static auto mouseReleaseHandle = im.onMouseReleased.subscribe(CallMe::fromMethod<&Player::HandleMouseRelease>(this));
     static auto mouseMoveHandle = im.onMouseMoved.subscribe(CallMe::fromMethod<&Player::HandleMouseMove>(this));
+
+    entt::registry& r = registry->Get();
+
+    auto camEntity = r.create();
+    r.emplace<Camera>(camEntity);
+    r.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 30.f, -5.f) }.LookAt(glm::vec3(0.0f)));
+    r.emplace<CameraGlobalTransform>(camEntity);
 }
 
 void Player::OnReceiveMessage(uint8_t* data)
@@ -43,12 +51,12 @@ void Player::OnReceiveMessage(uint8_t* data)
     }
 }
 
-void Player::Run(entt::registry& registry, uint32_t tick)
+void Player::Run(uint32_t tick)
 {
-    CameraMovement(registry);
+    CameraMovement();
 }
 
-void Player::RunSim(entt::registry& registry, uint32_t tick)
+void Player::RunSim(uint32_t tick)
 {
 }
 
@@ -82,13 +90,12 @@ void Player::HandleMouseMove(const glm::vec2& pos)
 {
     if (isMouseDown)
     {
-        LOG("Temp", Log, "Pressing mouse?");
     }
 }
 
-void Player::CameraMovement(entt::registry& registry)
+void Player::CameraMovement()
 {
-    auto view = registry.view<CameraTransform>();
+    auto view = registry->Get().view<CameraTransform>();
 
     InputManager& im = InputManager::Get();
     const glm::vec2& movementAxis = im.GetMovementAxis();
@@ -104,19 +111,19 @@ void Player::CameraMovement(entt::registry& registry)
         {
             const glm::vec3 rightMovement = movementAxis.x * transform.right;
             glm::vec3 forward = movementAxis.y * transform.forward;
-            forward.y = 0.0f;
+            // forward.y = 0.0f;
 
             const glm::vec3 final = glm::normalize(rightMovement + forward);
 
-            transform.position += final * CAMERA_MOVEMENT_SPEED * TransformSystem::NON_SIM_DT;
+            transform.position += final * CAMERA_MOVEMENT_SPEED * TransformMath::NON_SIM_DT;
 
             transform.flags |= VIEW_CHANGED;
         }
 
         if (localRotateCamera)
         {
-            float yaw = glm::radians(mouseDelta.x * CAMERA_ROTATION_SPEED * TransformSystem::NON_SIM_DT);
-            float pitch = glm::radians(mouseDelta.y * CAMERA_ROTATION_SPEED * TransformSystem::NON_SIM_DT);
+            float yaw = glm::radians(mouseDelta.x * CAMERA_ROTATION_SPEED * TransformMath::NON_SIM_DT);
+            float pitch = glm::radians(mouseDelta.y * CAMERA_ROTATION_SPEED * TransformMath::NON_SIM_DT);
 
             glm::quat qPitch = glm::angleAxis(pitch, transform.right);
             glm::quat qYaw = glm::angleAxis(yaw, WORLD_UP);

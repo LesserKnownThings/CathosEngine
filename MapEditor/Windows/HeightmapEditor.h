@@ -12,11 +12,16 @@ class HeightmapEditor
 
     CallMe::Event<void(const MapFormat&)> onMapCreated;
 
+    bool IsBaked() const { return isBaked; }
+    const MapFormat& GetMap() const { return map; }
+
   private:
     void BakeMap();
 
     std::string heightmap;
     std::string normal;
+
+    bool isBaked = false;
 
     MapFormat map{};
 };

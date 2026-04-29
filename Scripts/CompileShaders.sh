@@ -17,6 +17,19 @@ for dir in "$SOURCE_DIR"/*/; do
 
     echo "Compiling $shader_name"
 
-    glslc "$dir/shader.vert" -o "$out_dir/vert.spv"
-    glslc "$dir/shader.frag" -o "$out_dir/frag.spv"
+    # Compile vertex shader
+    if ! glslc "$dir/shader.vert" -o "$out_dir/vert.spv"; then
+        echo "Failed to compile vertex shader for $shader_name"
+        exit 1
+    fi
+
+    # Compile fragment shader
+    if ! glslc "$dir/shader.frag" -o "$out_dir/frag.spv"; then
+        echo "Failed to compile fragment shader for $shader_name"
+        exit 1
+    fi
 done
+
+DEBUG_BUILD_DIR="$PARENT_DIR/Build/Linux/Debug/Data/Engine"
+
+cp -rf "$DEST_DIR/" "$DEBUG_BUILD_DIR/"

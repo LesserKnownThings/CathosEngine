@@ -180,7 +180,7 @@ void HeightmapEditor::BakeMap()
                     const int32_t sectorIndex = sectorY * wSectors + sectorX;
                     if (isUnique)
                     {
-                        map.sectors[sectorIndex].costType = Wall;
+                        map.sectors[sectorIndex].costType = Unique;
                         map.sectors[sectorIndex].costBuffer = new uint8_t[SECTOR_SIZE];
 
                         for (int32_t i = 0; i < SECTOR_SIZE; ++i)
@@ -225,5 +225,6 @@ void HeightmapEditor::BakeMap()
 
     TextureImporter::ReadPixels(normal, loadNormalFunc);
 
+    isBaked = true;
     onMapCreated.raise(map);
 }

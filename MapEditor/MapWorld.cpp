@@ -1,7 +1,7 @@
 #include "MapWorld.h"
 #include "Callme/CallMe.h"
+#include "Components/Collider.h"
 #include "Components/Color.h"
-#include "Components/Transform.h"
 #include "Game/Player.h"
 #include "InputManager.h"
 #include "Map/MapFormat.h"
@@ -72,6 +72,12 @@ void MapWorld::HandleMapCreated(const MapFormat& map)
                         AssetPath("Data/Meshes/cube.glb"),
                         AssetPath{},
                         color,
+                        true,
+                        Collider{
+                            0.f,
+                            Float3{ -1.0f, 0.f, -1.f },
+                            Float3{ 1.0f },
+                            ColliderType::AABB }
                     };
 
                     SceneUtilities::CreateScene(registry, globalCmd, spatial, data);
@@ -86,8 +92,8 @@ void MapWorld::Run()
     InputManager::Get().PollInput();
 
     SystemRegistry& sysRegistry = SystemRegistry::Get();
-    sysRegistry.Run(registry, globalCmd, SystemPhase::Logic);
-
+    sysRegistry.Run(registry, globalCmd, SystemPhase::Simulation);
+    sysRegistry.RunSync(registry, globalCmd, 0, SystemPhase::Simulation);
     player->Run(0);
 }
 
@@ -112,7 +118,7 @@ void MapWorld::Render()
     ImDrawData* draw_data = ImGui::GetDrawData();
     ImGui_ImplVulkan_RenderDrawData(draw_data, rs.GetCurrentCommandBuffer());
 
-    rs.Draw(registry->Get(), 0.01f);
+    rs.Draw(registry, 0.01f);
 
     rs.EndFrame();
 }

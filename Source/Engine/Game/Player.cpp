@@ -4,13 +4,13 @@
 #include "InputManager.h"
 #include "Math/TransformMath.hpp"
 #include "Netcode/Message.h"
+#include "Registry/Registry.h"
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
 #include <entt/entt.hpp>
 #include <glm/ext/quaternion_geometric.hpp>
 #include <glm/geometric.hpp>
 #include <string>
-#include "Registry/Registry.h"
 
 #include "Game/Camera.h"
 
@@ -23,13 +23,6 @@ Player::Player(Registry* inRegistry)
     static auto mouseClickHandle = im.onMouseClicked.subscribe(CallMe::fromMethod<&Player::HandleMouseClick>(this));
     static auto mouseReleaseHandle = im.onMouseReleased.subscribe(CallMe::fromMethod<&Player::HandleMouseRelease>(this));
     static auto mouseMoveHandle = im.onMouseMoved.subscribe(CallMe::fromMethod<&Player::HandleMouseMove>(this));
-
-    entt::registry& r = registry->Get();
-
-    auto camEntity = r.create();
-    r.emplace<Camera>(camEntity);
-    r.emplace<CameraTransform>(camEntity, CameraTransform{ .position = glm::vec3(0.f, 30.f, -5.f) }.LookAt(glm::vec3(0.0f)));
-    r.emplace<CameraGlobalTransform>(camEntity);
 }
 
 void Player::OnReceiveMessage(uint8_t* data)

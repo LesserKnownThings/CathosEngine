@@ -28,6 +28,8 @@ struct Texture2D;
 struct MeshData;
 struct MeshGPUData;
 
+class Registry;
+
 #if MAP_EDITOR
 struct ImGui_ImplVulkan_InitInfo;
 #endif
@@ -97,8 +99,11 @@ class RenderingSystem
 
     // This draw function only supports isntanced drawing
     // It will batch both materials and meshes and do an instance drawing based on that
-    void Draw(entt::registry& registry, float alpha);
+    void Draw(Registry* registry, float alpha);
+    void DrawGizmos();
     void EndFrame();
+
+    RenderPipeline* GetRenderPipeline(EPipelineType type) const;
 
     void DestroyBuffer(AllocatedBuffer buffer);
     void DestroyTexture(AllocatedTexture texture);
@@ -115,6 +120,7 @@ class RenderingSystem
 
     MeshGPUData CreateMesh(const MeshData& meshData);
     void DestroyMesh(const MeshGPUData& mesh);
+    void UpdateCameraMatrix(const glm::mat4& projectionView);
 
 #if MAP_EDITOR
     void InitImGui();
@@ -221,12 +227,12 @@ class RenderingSystem
     void CreateUniversalDescriptors();
     void CreateInstanceDescriptors();
     void CreateTextureDescriptors();
+    void CreateGizmosDescriptors();
 
     void AllocateDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& outSet, VkDescriptorPool pool, const void* next = nullptr);
     void UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set, AllocatedBuffer buffer,
                              uint32_t binding = 0);
 
-    void UpdateCameraMatrix(const glm::mat4& projectionView);
     uint32_t GetOrCreateTextureIndex();
     void ReturnTextureIndex(uint32_t index);
 
@@ -262,6 +268,7 @@ class RenderingSystem
 
     std::vector<AllocatedBuffer> buffersPendingDelete;
     std::vector<AllocatedTexture> imagesPendingDelete;
+    AllocatedBuffer gizmosBuffer;
 
     std::vector<const char*> instanceExtensions = { VK_EXT_DEBUG_UTILS_EXTENSION_NAME };
 

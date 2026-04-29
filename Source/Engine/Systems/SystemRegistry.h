@@ -15,16 +15,14 @@ using InitFunc = CallMe::Delegate<void(Registry*, CommandBuffer&)>;
 
 #define DEPENDENCIES(...) __VA_ARGS__
 
-#define REGISTER_SYSTEM(SystemType, Phase, Before, After)                    \
+#define REGISTER_SYSTEM(SystemType, Phase, Before, After, SortIndex)         \
     inline static struct Reg_##SystemType                                    \
     {                                                                        \
         Reg_##SystemType()                                                   \
         {                                                                    \
             SystemRegistry::Get().Add({ std::type_index(typeid(SystemType)), \
                                         Phase,                               \
-                                        SystemFunc(),                        \
-                                        SyncSystemFunc(),                    \
-                                        InitFunc(),                          \
+                                        SortIndex,                           \
                                         Before,                              \
                                         After,                               \
                                         []() { SystemType{}; } });           \
@@ -33,8 +31,7 @@ using InitFunc = CallMe::Delegate<void(Registry*, CommandBuffer&)>;
 
 enum class SystemPhase
 {
-    Logic,
-    Physics,
+    Simulation, // This runs in both sync and unsync
     Presentation,
 };
 
@@ -42,11 +39,19 @@ struct SystemInfo
 {
     std::type_index id;
     SystemPhase phase;
+    uint32_t sortIndex;
+    std::vector<std::type_index> before;
+    std::vector<std::type_index> after;
+    std::function<void()> creator;
+};
+
+struct SystemMeta
+{
+    std::type_index id;
+    SystemPhase phase;
     SystemFunc func;
     SyncSystemFunc syncFunc;
     InitFunc initFunc;
-    std::vector<std::type_index> before;
-    std::vector<std::type_index> after;
     std::function<void()> creator;
 };
 
@@ -68,7 +73,7 @@ class SystemRegistry
     template <typename T, auto M>
     void BindInitFunc(T* instance)
     {
-        for (auto& system : infos)
+        for (auto& system : sortedSystems)
         {
             if (system.id == typeid(T))
             {
@@ -81,7 +86,7 @@ class SystemRegistry
     template <typename T, auto M>
     void BindFunc(T* instance)
     {
-        for (auto& system : infos)
+        for (auto& system : sortedSystems)
         {
             if (system.id == typeid(T))
             {
@@ -94,7 +99,7 @@ class SystemRegistry
     template <typename T, auto M>
     void BindSyncFunc(T* instance)
     {
-        for (auto& system : infos)
+        for (auto& system : sortedSystems)
         {
             if (system.id == typeid(T))
             {
@@ -108,4 +113,5 @@ class SystemRegistry
     void Bake();
 
     std::vector<SystemInfo> infos;
+    std::vector<SystemMeta> sortedSystems;
 };

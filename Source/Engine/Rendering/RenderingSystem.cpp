@@ -1,12 +1,17 @@
 #include "RenderingSystem.h"
 #include "BindingDefinitions.h"
 #include "Callme/CallMe.Event.h"
+#include "Components/Collider.h"
 #include "Components/Transform.h"
 #include "Debug/DebugSystem.h"
 #include "Frame.h"
 #include "Game/Camera.h"
 #include "InputManager.h"
+#include "Math/FixedMath.hpp"
 #include "Pipelines/PBRPipeline.h"
+#include "Registry/Registry.h"
+#include "Rendering/Gizmos.h"
+#include "Rendering/Pipelines/GizmosPipeline.h"
 #include "Rendering/Pipelines/RenderPipeline.h"
 #include "Rendering/VkData.h"
 #include "Resources/MaterialMesh3D.h"
@@ -229,23 +234,75 @@ void RenderingSystem::BeginFrame()
     vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
 }
 
-void RenderingSystem::Draw(entt::registry& registry, float alpha)
+inline bool FrustumIntersects(const Frustum& frustum, const RenderTransform& transform, const Collider& collider)
+{
+    for (int32_t i = 0; i < 6; ++i)
+    {
+        const Plane& plane = frustum.planes[i];
+
+        if (collider.type == ColliderType::AABB)
+        {
+            Float3 pVertex = collider.min;
+            if (plane.normal.x >= 0)
+                pVertex.x = collider.max.x;
+            if (plane.normal.y >= 0)
+                pVertex.y = collider.max.y;
+            if (plane.normal.z >= 0)
+                pVertex.z = collider.max.z;
+
+            if (plane.SignedDistance(pVertex) < 0)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            float distance = glm::dot(plane.normal, static_cast<glm::vec3>(transform.currentPos)) + plane.distance;
+
+            if (FixedT(distance) < -collider.radius)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+void RenderingSystem::DrawGizmos()
 {
     const Frame& currentFrame = GetCurrentFrame();
-    VkCommandBuffer buffer = currentFrame.commandBuffer;
+    VkCommandBuffer cmdBuffer = currentFrame.commandBuffer;
 
-    auto camView = registry.view<CameraGlobalTransform>();
-    auto updateCamFunc = [&](const CameraGlobalTransform& global)
+    auto it = pipelines.find(EPipelineType::Gizmos);
+    if (it != pipelines.end())
     {
-        UpdateCameraMatrix(global.projectionView);
-    };
-    camView.each(updateCamFunc);
+        Gizmos& gizmos = Gizmos::Get();
+
+        RenderPipeline* pipeline = it->second;
+        pipeline->Bind(cmdBuffer);
+
+        VkBuffer vb = gizmosBuffer.buffer;
+        uint8_t* instanceBuffer = static_cast<uint8_t*>(gizmosBuffer.allocationInfo.pMappedData);
+        memcpy(instanceBuffer, gizmos.verts.data(), gizmos.verts.size() * sizeof(GizmosVertex));
+
+        VkDeviceSize offset[] = { 0 };
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &vb, offset);
+        vkCmdDraw(cmdBuffer, gizmos.verts.size(), 1, 0, 0);
+        gizmos.verts.clear();
+    }
+}
+
+void RenderingSystem::Draw(Registry* registry, float alpha)
+{
+    const Frame& currentFrame = GetCurrentFrame();
+    VkCommandBuffer cmdBuffer = currentFrame.commandBuffer;
 
     auto it = pipelines.find(EPipelineType::PBR);
     if (it != pipelines.end())
     {
         RenderPipeline* pipeline = it->second;
-        pipeline->Bind(buffer);
+        pipeline->Bind(cmdBuffer);
 
         struct RenderCommand
         {
@@ -261,21 +318,15 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
             }
         };
 
-        auto view = registry.view<Mesh, MaterialMesh3D, RenderTransform>();
-        const auto& meshStorage = registry.storage<Mesh>();
-
-        const entt::entity* entities = meshStorage.data();
-        const int32_t storageSize = meshStorage.size();
-
-        int32_t draws = 1;
-        if (storageSize > MAX_INSTANCE_BUFFER)
-        {
-            draws = storageSize / MAX_INSTANCE_BUFFER;
-        }
+        entt::registry& reg = registry->Get();
+        auto view = reg.view<Mesh, MaterialMesh3D, RenderTransform>();
+        auto storage = view.storage<Mesh>();
+        const entt::entity* entities = storage->data();
+        const int32_t storageSize = storage->size();
 
         static std::vector<RenderCommand> queue(MAX_INSTANCE_BUFFER);
 
-        auto createSortTable = [&view, &entities](int32_t start, int32_t end)
+        auto createSortTable = [&view, storageSize, entities](int32_t start, int32_t end)
         {
             for (int32_t i = start; i < end; ++i)
             {
@@ -298,8 +349,6 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
         static std::vector<MaterialData> materialData;
         models.resize(storageSize);
         materialData.resize(storageSize);
-
-        // TODO Frustum culling
 
         auto processFunc = [&view, &alpha](int32_t start, int32_t end)
         {
@@ -365,18 +414,11 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
 
                 VkDeviceSize zeroOffset = 0;
 
-                vkCmdBindVertexBuffers(buffer, 0, 1, &gpuData.vertices.buffer, &zeroOffset);
-                vkCmdBindIndexBuffer(buffer, gpuData.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &gpuData.vertices.buffer, &zeroOffset);
+                vkCmdBindIndexBuffer(cmdBuffer, gpuData.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 
                 indicesCount = gpuData.indicesCount;
             }
-
-            // if (material.handle != currentMaterialHandle)
-            // {
-            //     currentMaterialHandle = material.handle;
-            //     AllocatedTexture textures[] = { material.handle->textureHandle->data.renderTexture };
-            //     pipeline->UpdateMaterial(textures, 1);
-            // }
 
             int32_t batchSize = 1;
             while (batchStart + batchSize < storageSize)
@@ -390,11 +432,13 @@ void RenderingSystem::Draw(entt::registry& registry, float alpha)
                 batchSize++;
             }
 
-            vkCmdDrawIndexed(buffer, indicesCount, batchSize, 0, 0, batchStart);
+            vkCmdDrawIndexed(cmdBuffer, indicesCount, batchSize, 0, 0, batchStart);
 
             batchStart += batchSize;
         }
     }
+
+    DrawGizmos();
 }
 
 void RenderingSystem::EndFrame()
@@ -1065,6 +1109,12 @@ bool RenderingSystem::CheckDeviceExtensionSupport(VkPhysicalDevice device) const
     return requiredExtensions.empty();
 }
 
+RenderPipeline* RenderingSystem::GetRenderPipeline(EPipelineType type) const
+{
+    auto it = pipelines.find(type);
+    return it->second;
+}
+
 void RenderingSystem::CreateRenderFrames()
 {
     for (int32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -1077,6 +1127,9 @@ void RenderingSystem::CreateRenderPipelines()
 {
     PBRPipeline* basePipeline = new PBRPipeline(context);
     pipelines.emplace(basePipeline->GetType(), basePipeline);
+
+    GizmosPipeline* gizmosPipeline = new GizmosPipeline(context);
+    pipelines.emplace(gizmosPipeline->GetType(), gizmosPipeline);
 }
 
 void RenderingSystem::SetupDebugMessenger()
@@ -1240,6 +1293,7 @@ void RenderingSystem::CreateDescriptorRegistry()
     CreateUniversalDescriptors();
     CreateInstanceDescriptors();
     CreateTextureDescriptors();
+    CreateGizmosDescriptors();
 }
 
 VkImageView RenderingSystem::CreateImageView(VkImage image, VkFormat format,
@@ -1770,6 +1824,13 @@ void RenderingSystem::CreateTextureDescriptors()
     descriptorRegistry.descriptors.emplace(TextureBinding::INDEX, std::move(descriptor));
 }
 
+void RenderingSystem::CreateGizmosDescriptors()
+{
+    constexpr int32_t MAX_GIZMOS_VERTS = 100000;
+
+    CreateBuffer(sizeof(GizmosVertex) * MAX_FRAMES_IN_FLIGHT * MAX_GIZMOS_VERTS, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, gizmosBuffer.buffer, gizmosBuffer.memory, &gizmosBuffer.allocationInfo);
+}
+
 void RenderingSystem::UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set,
                                           AllocatedBuffer buffer, uint32_t binding)
 {
@@ -1796,7 +1857,7 @@ void RenderingSystem::UnmapMemory(VmaAllocation allocation)
 
 void RenderingSystem::UpdateCameraMatrix(const glm::mat4& projectionView)
 {
-    auto it = descriptorRegistry.mappedBuffers.find({ UniversalBinding::INDEX, 0 });
+    auto it = descriptorRegistry.mappedBuffers.find({ UniversalBinding::INDEX, UniversalBinding::CAMERA });
     if (it != descriptorRegistry.mappedBuffers.end())
     {
         AllocatedBuffer& buffer = it->second;

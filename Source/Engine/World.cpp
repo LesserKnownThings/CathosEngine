@@ -1,5 +1,6 @@
 #include "World.h"
 
+#include "Components/Collider.h"
 #include "Components/Color.h"
 #include "Components/Transform.h"
 #include "Game/CommandProcessor.h"
@@ -8,6 +9,7 @@
 #include "Math/FixedMath.hpp"
 #include "Netcode/NetworkManager.h"
 #include "Registry/Registry.h"
+#include "Rendering/Gizmos.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/AssetPath.h"
 #include "Systems/SystemRegistry.h"
@@ -48,7 +50,7 @@ void World::Run()
     NetworkManager::Get().Run();
     InputManager::Get().PollInput();
 
-    SystemRegistry::Get().Run(registry, globalCmd, SystemPhase::Logic);
+    SystemRegistry::Get().Run(registry, globalCmd, SystemPhase::Simulation);
 
     // registry->Run();
     player->Run(simTick);
@@ -80,21 +82,23 @@ void World::NetPulse()
 void World::RunSim(uint32_t tick)
 {
     simTick = tick;
-
-    SystemRegistry& systemReg = SystemRegistry::Get();
-
-    systemReg.RunSync(registry, globalCmd, tick, SystemPhase::Logic);
-    systemReg.RunSync(registry, globalCmd, tick, SystemPhase::Physics);
+    SystemRegistry::Get().RunSync(registry, globalCmd, tick, SystemPhase::Simulation);
 }
 
 void World::Render(float alpha)
 {
     RenderingSystem& rs = RenderingSystem::Get();
 
-    SystemRegistry::Get().Run(registry, globalCmd, SystemPhase::Presentation);
+    for (int32_t i = 0; i < 100; ++i)
+    {
+        Gizmos::DrawCube(glm::vec4{ 1.0f, 0.0f, 0.0f, 1.0f }, glm::vec3{ 0.0f } + (float)i * glm::vec3(2.0f, 0.0f, 0.0f) - glm::vec3(50.0f, 0.0f, 0.0f), glm::vec3(0.5f));
+    }
+
+    SystemRegistry::Get()
+        .Run(registry, globalCmd, SystemPhase::Presentation);
 
     rs.BeginFrame();
-    rs.Draw(registry->Get(), alpha);
+    rs.Draw(registry, alpha);
     rs.EndFrame();
 }
 
@@ -119,22 +123,15 @@ void World::CreateWorld()
         AssetPath("Data/Meshes/cube.glb"),
         AssetPath{},
         Color::WHITE,
+        false,
+        Collider{
+            1.0f,
+            Float3{},
+            Float3{},
+            ColliderType::Sphere }
     };
 
-    SceneUtilities::CreateScene(registry, globalCmd, tr1, data);
-
-    Transform tr2{
-        Float3{ 2.f, 0.0f, 0.0f },
-        Float3{},
-        Float3{ .5f }
-    };
-    SceneData data2{
-        AssetPath("Data/Meshes/cube.glb"),
-        AssetPath{},
-        Color::YELLOW,
-    };
-
-    SceneUtilities::CreateScene(registry, globalCmd, tr2, data2);
+    // SceneUtilities::CreateScene(registry, globalCmd, tr1, data);
 }
 
 void World::EndFrameCommandBuffer()

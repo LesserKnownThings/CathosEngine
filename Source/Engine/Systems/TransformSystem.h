@@ -16,5 +16,5 @@ class TransformSystem
     void RunSync(Registry* registry, CommandBuffer& cmd, uint32_t tick);
 
     void UpdateTransformHierarchy(Registry* registry);
-    void SyncSimTransformToRenderTransform(Registry* registry);
+    void TransformToRenderTransform(Registry* registry);
 };

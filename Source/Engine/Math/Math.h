@@ -5,6 +5,8 @@
 
 namespace Math
 {
+constexpr float PI = 3.14159265359f;
+
 inline Float3 Normalize(const Float3& v)
 {
     fpm::fixed_16_16 lengthSq = (v.x * v.x) + (v.y * v.y) + (v.z * v.z);

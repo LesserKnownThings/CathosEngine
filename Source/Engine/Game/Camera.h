@@ -1,8 +1,11 @@
 #pragma once
 
+#include "Math/FixedMath.hpp"
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/matrix.hpp>
 
 constexpr glm::vec3 WORLD_RIGHT = glm::vec3(1.0f, 0.0f, 0.0f);
 constexpr glm::vec3 WORLD_UP = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -32,9 +35,38 @@ struct CameraTransform
 
 struct CameraGlobalTransform
 {
-    glm::mat4 projection;
-    glm::mat4 view;
-    glm::mat4 projectionView;
+    glm::mat4 projection = glm::mat4(1.0f);
+    glm::mat4 view = glm::mat4(1.0f);
+    glm::mat4 projectionView = glm::mat4(1.0f);
+
+    static glm::mat4 InvProjectionView(const CameraGlobalTransform& tr)
+    {
+        return glm::inverse(tr.projectionView);
+    }
+};
+
+struct Plane
+{
+    glm::vec3 normal;
+    float distance;
+
+    inline float SignedDistance(const Float3& point) const
+    {
+        return glm::dot(normal, static_cast<glm::vec3>(point)) + distance;
+    }
+
+    void Normalize()
+    {
+        float length = glm::length(normal);
+        normal /= length;
+        distance /= length;
+    }
+};
+
+struct Frustum
+{
+    // Near, Far, Left, Right, Top, Bottom
+    Plane planes[6];
 };
 
 struct Camera
@@ -49,4 +81,6 @@ struct Camera
     static glm::vec3 Forward(const CameraTransform& transform);
     static glm::vec3 Right(const CameraTransform& transform);
     static glm::vec3 Up(const CameraTransform& transform);
+
+    static void ExtractFrustum(Frustum& frustum, const glm::mat4& vp);
 };

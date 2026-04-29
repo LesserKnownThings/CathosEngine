@@ -1,5 +1,6 @@
 #include "Menus.h"
 
+#include "Utilities/MapUtils.h"
 #include "Utilities/portable-file-dialogs.h"
 #include "Windows/HeightmapEditor.h"
 #include <cmath>
@@ -24,6 +25,15 @@ void Menus::Draw()
         {
             if (ImGui::MenuItem("Export"))
             {
+                HeightmapEditor& hm = HeightmapEditor::Get();
+                if (hm.IsBaked())
+                {
+                    auto result = pfd::save_file("Save Map (cmf)", "", { "Map Format (.cmf)", "*.cmf" }).result();
+                    if (!result.empty())
+                    {
+                        MapUtils::ExportMap(result, hm.GetMap());
+                    }
+                }
             }
 
             ImGui::EndMenu();

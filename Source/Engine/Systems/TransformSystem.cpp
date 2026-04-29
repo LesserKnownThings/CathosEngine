@@ -1,6 +1,5 @@
 #include "TransformSystem.h"
 #include "Components/Transform.h"
-#include "Game/Camera.h"
 #include "Math/TransformMath.hpp"
 #include "Registry/CommandBuffer.h"
 #include "Registry/Registry.h"
@@ -8,7 +7,7 @@
 #include "Systems/SystemRegistry.h"
 #include "TaskScheduler.h"
 
-REGISTER_SYSTEM(TransformSystem, SystemPhase::Logic, DEPENDENCIES({}), DEPENDENCIES({}));
+REGISTER_SYSTEM(TransformSystem, SystemPhase::Simulation, DEPENDENCIES({}), DEPENDENCIES({}), 1);
 
 TransformSystem::TransformSystem()
 {
@@ -19,7 +18,7 @@ TransformSystem::TransformSystem()
 
 void TransformSystem::Run(Registry* registry, CommandBuffer& cmd)
 {
-    SyncSimTransformToRenderTransform(registry);
+    TransformToRenderTransform(registry);
 }
 
 void TransformSystem::RunSync(Registry* registry, CommandBuffer& cmd, uint32_t tick)
@@ -65,38 +64,9 @@ void TransformSystem::UpdateTransformHierarchy(Registry* registry)
     };
 
     TaskScheduler::Get().ParallelForSync(group.size(), func);
-
-    // TODO maybe move this to a camera system instead?
-    // Updating the cameras here as well
-    auto camGroup = reg.group<CameraTransform, CameraGlobalTransform>(entt::get<Camera>);
-    const float aspectRatio = RenderingSystem::Get().GetAspectRatio();
-
-    auto updateCamTransform = [&camGroup, &aspectRatio](CameraTransform& transform, CameraGlobalTransform& global, const Camera& cam)
-    {
-        if ((transform.flags & PROJECTION_CHANGED) != 0)
-        {
-            transform.flags &= ~PROJECTION_CHANGED;
-            global.projection = Camera::CalculateProjection(cam, aspectRatio);
-            global.projectionView = global.projection * global.view;
-        }
-
-        if ((transform.flags & VIEW_CHANGED) != 0)
-        {
-            transform.flags &= ~VIEW_CHANGED;
-
-            transform.right = Camera::Right(transform);
-            transform.forward = Camera::Forward(transform);
-            transform.up = Camera::Up(transform);
-
-            global.view = Camera::CalculateView(transform);
-            global.projectionView = global.projection * global.view;
-        }
-    };
-
-    camGroup.each(updateCamTransform);
 }
 
-void TransformSystem::SyncSimTransformToRenderTransform(Registry* registry)
+void TransformSystem::TransformToRenderTransform(Registry* registry)
 {
     entt::registry& reg = registry->Get();
 

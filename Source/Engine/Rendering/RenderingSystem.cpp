@@ -282,6 +282,16 @@ void RenderingSystem::DrawGizmos()
         RenderPipeline* pipeline = it->second;
         pipeline->Bind(cmdBuffer);
 
+        if (gizmos.verts.size() >= currentGizmosCapacity)
+        {
+            currentGizmosCapacity = gizmos.verts.size() * 2;
+
+            CreateBuffer(sizeof(GizmosVertex) * MAX_FRAMES_IN_FLIGHT * currentGizmosCapacity, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, gizmosBuffer.buffer, gizmosBuffer.memory, &gizmosBuffer.allocationInfo);
+
+            // Giving the system a frame before trying to render
+            return;
+        }
+
         VkBuffer vb = gizmosBuffer.buffer;
         uint8_t* instanceBuffer = static_cast<uint8_t*>(gizmosBuffer.allocationInfo.pMappedData);
         memcpy(instanceBuffer, gizmos.verts.data(), gizmos.verts.size() * sizeof(GizmosVertex));
@@ -1826,9 +1836,10 @@ void RenderingSystem::CreateTextureDescriptors()
 
 void RenderingSystem::CreateGizmosDescriptors()
 {
-    constexpr int32_t MAX_GIZMOS_VERTS = 100000;
+    constexpr int32_t INITIAL_GIZMOS_VERTS = 100000;
+    currentGizmosCapacity = INITIAL_GIZMOS_VERTS;
 
-    CreateBuffer(sizeof(GizmosVertex) * MAX_FRAMES_IN_FLIGHT * MAX_GIZMOS_VERTS, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, gizmosBuffer.buffer, gizmosBuffer.memory, &gizmosBuffer.allocationInfo);
+    CreateBuffer(sizeof(GizmosVertex) * MAX_FRAMES_IN_FLIGHT * INITIAL_GIZMOS_VERTS, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, gizmosBuffer.buffer, gizmosBuffer.memory, &gizmosBuffer.allocationInfo);
 }
 
 void RenderingSystem::UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set,

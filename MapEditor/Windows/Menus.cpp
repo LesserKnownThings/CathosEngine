@@ -73,6 +73,24 @@ void Menus::Draw()
             HeightmapEditor::Get().Generate(heightmapPath, normalPath);
         }
     }
+    else
+    {
+        if (ImGui::Button("Load Map"))
+        {
+            auto result = pfd::open_file("Load map.", "", { "Map", "*.cmf" }).result();
+
+            std::string mapMapth;
+            if (!result.empty())
+            {
+                mapMapth = result[0];
+            }
+
+            if (!mapMapth.empty())
+            {
+                HeightmapEditor::Get().LoadMap(mapMapth);
+            }
+        }
+    }
 
     ImGui::End();
 }

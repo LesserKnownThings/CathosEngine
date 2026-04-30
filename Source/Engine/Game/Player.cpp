@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
 #include <entt/entt.hpp>
+#include <format>
 #include <glm/ext/quaternion_geometric.hpp>
 #include <glm/geometric.hpp>
 #include <string>
@@ -88,43 +89,42 @@ void Player::HandleMouseMove(const glm::vec2& pos)
 
 void Player::CameraMovement()
 {
-    auto view = registry->Get().view<CameraTransform>();
+    if (!registry->ContainsResource<CameraTransform>())
+        return;
+
+    CameraTransform& camTransform = registry->GetResource<CameraTransform>();
 
     InputManager& im = InputManager::Get();
     const glm::vec2& movementAxis = im.GetMovementAxis();
     const glm::vec2& mouseDelta = im.GetMouseDelta();
     const bool localRotateCamera = rotateCamera;
 
-    constexpr float CAMERA_MOVEMENT_SPEED = 30.0f;
+    constexpr float CAMERA_MOVEMENT_SPEED = 120.0f;
     constexpr float CAMERA_ROTATION_SPEED = 60.0f;
 
-    auto func = [&movementAxis, &localRotateCamera, &mouseDelta](CameraTransform& transform)
+    if (glm::length(movementAxis) > 0.0f)
     {
-        if (glm::length(movementAxis) > 0.0f)
-        {
-            const glm::vec3 rightMovement = movementAxis.x * transform.right;
-            glm::vec3 forward = movementAxis.y * transform.forward;
-            // forward.y = 0.0f;
+        const glm::vec3 rightMovement = movementAxis.x * camTransform.right;
+        glm::vec3 forward = movementAxis.y * camTransform.forward;
+        forward.y = 0.0f;
 
-            const glm::vec3 final = glm::normalize(rightMovement + forward);
+        const glm::vec3 final = glm::normalize(rightMovement + forward);
 
-            transform.position += final * CAMERA_MOVEMENT_SPEED * TransformMath::NON_SIM_DT;
+        camTransform.position += final * CAMERA_MOVEMENT_SPEED * TransformMath::NON_SIM_DT;
 
-            transform.flags |= VIEW_CHANGED;
-        }
+        camTransform.flags |= VIEW_CHANGED;
+    }
 
-        if (localRotateCamera)
-        {
-            float yaw = glm::radians(mouseDelta.x * CAMERA_ROTATION_SPEED * TransformMath::NON_SIM_DT);
-            float pitch = glm::radians(mouseDelta.y * CAMERA_ROTATION_SPEED * TransformMath::NON_SIM_DT);
+    if (localRotateCamera)
+    {
+        float yaw = glm::radians(mouseDelta.x * CAMERA_ROTATION_SPEED * TransformMath::NON_SIM_DT);
+        float pitch = glm::radians(mouseDelta.y * CAMERA_ROTATION_SPEED * TransformMath::NON_SIM_DT);
 
-            glm::quat qPitch = glm::angleAxis(pitch, transform.right);
-            glm::quat qYaw = glm::angleAxis(yaw, WORLD_UP);
+        glm::quat qPitch = glm::angleAxis(pitch, camTransform.right);
+        glm::quat qYaw = glm::angleAxis(yaw, WORLD_UP);
 
-            transform.rotation = qYaw * qPitch * transform.rotation;
+        camTransform.rotation = qYaw * qPitch * camTransform.rotation;
 
-            transform.flags |= VIEW_CHANGED;
-        }
-    };
-    view.each(func);
+        camTransform.flags |= VIEW_CHANGED;
+    }
 }

@@ -1,54 +1,35 @@
-#include "MapWorld.h"
-#include "Callme/CallMe.h"
-#include "Components/Collider.h"
-#include "Components/Color.h"
-#include "Game/Player.h"
-#include "InputManager.h"
+#include "NavigationSystem.h"
 #include "Map/MapFormat.h"
 #include "Registry/Registry.h"
 #include "Rendering/Gizmos.h"
-#include "Rendering/RenderingSystem.h"
 #include "Resources/SpatialPartition/Sector.h"
 #include "Systems/SystemRegistry.h"
-#include "Utilities/SceneUtilities.h"
-#include "Windows/HeightmapEditor.h"
-#include "Windows/Menus.h"
+#include "Utilities/MapUtils.h"
+#include <cstdint>
 
-#include <algorithm>
-#include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_vulkan.h>
-#include <glm/ext/vector_float4.hpp>
-#include <imgui.h>
+REGISTER_SYSTEM(NavigationSystem, SystemPhase::Simulation, DEPENDENCIES({}), DEPENDENCIES({}), 0);
 
-void MapWorld::Init()
+NavigationSystem::NavigationSystem()
 {
-    windows.push_back(new Menus());
-
-    RenderingSystem& rs = RenderingSystem::Get();
-    rs.InitImGui();
-
-    static auto handle = HeightmapEditor::Get().onMapCreated.subscribe(CallMe::fromMethod<&MapWorld::HandleMapCreated>(this));
-
-    registry = new Registry();
-    player = new Player(registry);
-
-    SystemRegistry::Get().Init(registry, globalCmd);
+    SystemRegistry& sreg = SystemRegistry::Get();
+    sreg.BindInitFunc<NavigationSystem, &NavigationSystem::Init>(this);
+    sreg.BindFunc<NavigationSystem, &NavigationSystem::Run>(this);
 }
 
-void MapWorld::HandleMapCreated(const MapFormat& map)
+void NavigationSystem::Init(Registry* registry, CommandBuffer& cmd)
 {
-    if (!registry->ContainsResource<MapFormat>())
+    MapFormat map{};
+    if (MapUtils::ImportMap("Data/Maps/TestMap.cmf", map))
+    {
         registry->AddResource(std::move(map));
+    }
 }
 
-void MapWorld::Run()
+void NavigationSystem::Run(Registry* registry, CommandBuffer& cmd)
 {
-    InputManager::Get().PollInput();
-
     if (registry->ContainsResource<MapFormat>())
     {
-        const MapFormat& map = registry->GetResource<MapFormat>();
-
+        const MapFormat map = registry->GetResource<MapFormat>();
         const int wSectors = map.width / SECTOR_DIM;
         const int hSectors = map.height / SECTOR_DIM;
 
@@ -60,7 +41,7 @@ void MapWorld::Run()
                 const glm::vec3 sectorPos = glm::vec3(x * SECTOR_DIM, 0.f, y * SECTOR_DIM);
                 if (!sector.hasCost)
                 {
-                    const glm::vec3 half = glm::vec3(SECTOR_DIM / 2, 1.0f, SECTOR_DIM / 2);
+                    const glm::vec3 half = glm::vec3(SECTOR_DIM / 2, 0.5f, SECTOR_DIM / 2);
                     Gizmos::DrawCube(glm::vec4(0.0, 1.0, 0.0, 1.0), sectorPos + half, half);
                 }
                 else
@@ -90,40 +71,4 @@ void MapWorld::Run()
                 }
             }
     }
-
-    SystemRegistry& sysRegistry = SystemRegistry::Get();
-    sysRegistry.Run(registry, globalCmd, SystemPhase::Simulation);
-    sysRegistry.RunSync(registry, globalCmd, 0, SystemPhase::Simulation);
-    player->Run(0);
-}
-
-void MapWorld::Render()
-{
-    RenderingSystem& rs = RenderingSystem::Get();
-
-    SystemRegistry::Get().Run(registry, globalCmd, SystemPhase::Presentation);
-
-    rs.BeginFrame();
-
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-
-    for (auto window : windows)
-    {
-        window->Draw();
-    }
-
-    ImGui::Render();
-    ImDrawData* draw_data = ImGui::GetDrawData();
-    ImGui_ImplVulkan_RenderDrawData(draw_data, rs.GetCurrentCommandBuffer());
-
-    rs.Draw(registry, 0.01f);
-
-    rs.EndFrame();
-}
-
-void MapWorld::EndFrameCommandBuffer()
-{
-    globalCmd.Execute(registry);
 }

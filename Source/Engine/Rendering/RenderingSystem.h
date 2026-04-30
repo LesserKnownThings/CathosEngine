@@ -253,6 +253,7 @@ class RenderingSystem
     static DescriptorRegistry descriptorRegistry;
     VkFormat swapChainImageFormat;
     SwapChainData swapChainData;
+    int32_t currentGizmosCapacity;
 
     uint32_t currentFrame = 0;
     uint32_t imageIndex = 0;

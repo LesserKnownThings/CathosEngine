@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Components/Collider.h"
-#include "Components/SpatialData.h"
 #include "Components/Transform.h"
 #include "Components/Visibility.h"
 #include "Math/TransformMath.hpp"
@@ -59,7 +58,6 @@ inline void CreateScene(Registry* registry, CommandBuffer& cmd, const Transform 
         cmd.AddComponent(entity, Hierarchy{});
         cmd.AddComponent(entity, Mesh{ meshRes, static_cast<uint8_t>(i) });
         cmd.AddComponent(entity, MaterialMesh3D{ matHandle, data.albedoColor });
-        cmd.AddComponent(entity, SpatialData{});
         cmd.AddComponent(entity, Visible{});
 
         // Only the parent should have a collider

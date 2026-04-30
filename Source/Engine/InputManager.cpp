@@ -5,6 +5,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_scancode.h>
 #include <glm/common.hpp>
+#include <glm/geometric.hpp>
 
 #if MAP_EDITOR
 #include <backends/imgui_impl_sdl3.h>

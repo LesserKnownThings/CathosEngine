@@ -2,7 +2,6 @@
 
 #include "Debug/DebugSystem.h"
 #include "Map/MapFormat.h"
-#include "Map/SpatialPartition/GridSystem.h"
 #include "Resources/SpatialPartition/Sector.h"
 
 #include <cstdint>
@@ -30,16 +29,12 @@ bool MapUtils::ImportMap(const std::string& path, MapFormat& outMap)
 
     for (SectorData& sector : outMap.sectors)
     {
-        file.read(reinterpret_cast<char*>(&sector.costType), sizeof(CostType));
-        if (sector.costType == Unique)
+        file.read(reinterpret_cast<char*>(&sector.hasCost), sizeof(bool));
+        if (sector.hasCost)
         {
             sector.costBuffer = new uint8_t[SECTOR_SIZE];
             file.read(reinterpret_cast<char*>(sector.costBuffer), SECTOR_SIZE);
         }
-        int32_t portalsCount = 0;
-        file.read(reinterpret_cast<char*>(&portalsCount), sizeof(int32_t));
-        // sector.portals.resize(portalsCount);
-        // file.read(reinterpret_cast<char*>(sector.portals.data()), sizeof(SectorPortal) * portalsCount);
     }
 
     file.close();
@@ -61,14 +56,11 @@ void MapUtils::ExportMap(const std::string& path, const MapFormat& map)
 
         for (const SectorData& sector : map.sectors)
         {
-            stream.write(reinterpret_cast<const char*>(&sector.costType), sizeof(CostType));
-            if (sector.costType == Unique)
+            stream.write(reinterpret_cast<const char*>(&sector.hasCost), sizeof(bool));
+            if (sector.hasCost)
             {
-                stream.write(reinterpret_cast<const char*>(sector.costBuffer), sizeof(SECTOR_SIZE));
+                stream.write(reinterpret_cast<const char*>(sector.costBuffer), SECTOR_SIZE);
             }
-            // const int32_t portalsCount = sector.portals.size();
-            // stream.write(reinterpret_cast<const char*>(&portalsCount), sizeof(int32_t));
-            // stream.write(reinterpret_cast<const char*>(sector.portals.data()), sizeof(SectorPortal) * portalsCount);
         }
 
         stream.close();

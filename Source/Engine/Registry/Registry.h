@@ -37,6 +37,12 @@ class Registry
         return registry.ctx().get<T>();
     }
 
+    template <typename T>
+    bool ContainsResource() const
+    {
+        return registry.ctx().contains<T>();
+    }
+
     AssetServer& GetAssetServer();
     entt::registry& Get() { return registry; }
 

@@ -1,6 +1,5 @@
 #include "Factories.h"
 #include "Components/Collider.h"
-#include "Components/SpatialData.h"
 #include "Components/Transform.h"
 #include "Components/Visibility.h"
 #include "Game/Camera.h"
@@ -28,6 +27,5 @@ Factories::Factories()
     RegisterComponentType<Visible>();
 
     // Physics
-    RegisterComponentType<SpatialData>();
     RegisterComponentType<Collider>();
 }

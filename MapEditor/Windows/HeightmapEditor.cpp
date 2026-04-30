@@ -2,12 +2,17 @@
 #include "Map/MapFormat.h"
 #include "Resources/SpatialPartition/Sector.h"
 #include "Resources/Texture.h"
+#include "Utilities/MapUtils.h"
 #include "Utilities/TextureImporter.h"
 #include <algorithm>
 #include <cstdint>
+#include <vector>
 
 constexpr float RAD_2_DEG = 180.f / 3.1415926535f;
-constexpr float MAX_SLOPE = 45.0f;
+constexpr float LOW_SLOPE[] = { 0.45f, 0.50f };
+constexpr float NORMAL_SLOPE[] = { 0.55f, 0.60f };
+constexpr float HIGH_SLOPE[] = { 0.65f, 0.70f };
+constexpr float TARGET_HEIGHT = 60.0f;
 
 HeightmapEditor& HeightmapEditor::Get()
 {
@@ -23,99 +28,17 @@ void HeightmapEditor::Generate(const std::string& heightmapTexturePath, const st
     BakeMap();
 }
 
-inline void AddPortal(SectorData& sector, int32_t a, int32_t b, int32_t start, int32_t end, PortalSide side)
+void HeightmapEditor::LoadMap(const std::string& path)
 {
-    SectorPortal p;
-    p.sectorA = a;
-    p.sectorB = b;
-    p.side = side;
-    p.start = start;
-    p.end = end;
-    p.center = ((start + end) / 2);
-
-    sector.portals.push_back(p);
+    MapFormat map{};
+    MapUtils::ImportMap(path, map);
+    onMapCreated.raise(map);
 }
 
-inline uint8_t GetCostAtEdge(SectorData& sector, PortalSide side, int32_t index)
+inline bool CalculateSectorCellElevations(const uint8_t* normalMapBuffer, int32_t startX, int32_t startY, int32_t fullWidth, float outElevations[SECTOR_SIZE])
 {
-    if (sector.costType == 0)
-        return 0;
+    bool isUnique = false;
 
-    if (index < 0 || index >= SECTOR_DIM)
-        return 255;
-
-    switch (side)
-    {
-    case North:
-        return sector.costBuffer[index];
-
-    case South:
-        return sector.costBuffer[(SECTOR_DIM - 1) * SECTOR_DIM + index];
-
-    case West:
-        return sector.costBuffer[index * SECTOR_DIM];
-
-    case East:
-        return sector.costBuffer[index * SECTOR_DIM + (SECTOR_DIM - 1)];
-
-    default:
-        return 255;
-    }
-}
-
-inline PortalSide GetOppositeSide(PortalSide side)
-{
-    switch (side)
-    {
-    case PortalSide::East:
-        return PortalSide::West;
-    case PortalSide::West:
-        return PortalSide::East;
-    case PortalSide::North:
-        return PortalSide::South;
-    case PortalSide::South:
-        return PortalSide::North;
-    }
-}
-
-inline void
-GeneratePortals(SectorData& sA, uint32_t idA, SectorData& sB, uint32_t idB, PortalSide side)
-{
-    PortalSide sideB = GetOppositeSide(side);
-    int32_t startIdx = -1;
-
-    for (int32_t i = 0; i < SECTOR_DIM; ++i)
-    {
-        bool walkableA = (sA.costType == 0) || (GetCostAtEdge(sA, side, i) == 0);
-        bool walkableB = (sB.costType == 0) || (GetCostAtEdge(sB, sideB, i) == 0);
-        bool bothWalkable = walkableA && walkableB;
-
-        if (bothWalkable)
-        {
-            if (startIdx == -1)
-            {
-                startIdx = i;
-            }
-        }
-        else
-        {
-            if (startIdx != -1)
-            {
-                AddPortal(sA, idA, idB, startIdx, i - 1, side);
-                startIdx = -1;
-            }
-        }
-    }
-
-    // Entire side is walkable
-    if (startIdx != -1)
-    {
-        AddPortal(sA, idA, idB, startIdx, SECTOR_DIM - 1, side);
-    }
-}
-
-inline void CalculateSectorCellElevations(const uint8_t* normalMapBuffer, int32_t startX, int32_t startY, int32_t fullWidth, float outElevations[SECTOR_SIZE], bool& outUnique)
-{
     for (int32_t y = 0; y < SECTOR_DIM; ++y)
     {
         for (int32_t x = 0; x < SECTOR_DIM; ++x)
@@ -133,94 +56,109 @@ inline void CalculateSectorCellElevations(const uint8_t* normalMapBuffer, int32_
             float angleRad = std::acos(nz);
 
             const float elevation = angleRad * RAD_2_DEG;
-            if (elevation > MAX_SLOPE)
+            if (elevation >= LOW_SLOPE[0])
             {
-                outUnique = true;
+                isUnique = true;
             }
             outElevations[localIndex] = elevation;
         }
     }
+
+    return isUnique;
 }
 
 void HeightmapEditor::BakeMap()
 {
-    auto loadNormalFunc = [&](void* normalPixels, const TextureData& normalData)
+    auto loadNormalFunc = [&](void* normalPixels, const TextureData& data)
     {
-        // This func is pretty heavy, maybe make it multi thread?
-        auto func = [&](void* heightmapPixels, const TextureData& data)
+        map.width = data.width;
+        map.height = data.height;
+        uint8_t* pixels = static_cast<uint8_t*>(normalPixels);
+
+        const int wSectors = map.width / SECTOR_DIM;
+        const int hSectors = map.height / SECTOR_DIM;
+        map.sectors.resize(wSectors * hSectors);
+
+        constexpr int KERNEL_RADIUS = 1;
+        const int KERNEL_WIDTH = (KERNEL_RADIUS * 2 + 1);
+        const float KERNEL_INV_TOTAL = 1.0f / (KERNEL_WIDTH * KERNEL_WIDTH);
+
+        for (int32_t sy = 0; sy < hSectors; ++sy)
         {
-            uint8_t* mPixels = static_cast<uint8_t*>(heightmapPixels);
-            const int wSectors = data.width / SECTOR_DIM;
-            const int hSectors = data.height / SECTOR_DIM;
-
-            map.width = data.width;
-            map.height = data.height;
-
-            const int32_t sectorsCount = wSectors * hSectors;
-            map.sectors.resize(sectorsCount);
-
-            for (int32_t sectorY = 0; sectorY < hSectors; ++sectorY)
+            for (int32_t sx = 0; sx < wSectors; ++sx)
             {
-                for (int32_t sectorX = 0; sectorX < wSectors; ++sectorX)
+                SectorData& sector = map.sectors[sy * wSectors + sx];
+                sector.costBuffer = new uint8_t[SECTOR_SIZE];
+                bool hasExpensiveTerrain = false;
+
+                for (int py = 0; py < SECTOR_DIM; ++py)
                 {
-                    float elevations[SECTOR_SIZE];
-                    bool isUnique = false;
-
-                    int32_t startPixelX = sectorX * SECTOR_DIM;
-                    int32_t startPixelY = sectorY * SECTOR_DIM;
-
-                    CalculateSectorCellElevations(
-                        static_cast<uint8_t*>(normalPixels),
-                        startPixelX,
-                        startPixelY,
-                        data.width,
-                        elevations,
-                        isUnique);
-
-                    const int32_t sectorIndex = sectorY * wSectors + sectorX;
-                    if (isUnique)
+                    for (int px = 0; px < SECTOR_DIM; ++px)
                     {
-                        map.sectors[sectorIndex].costType = Unique;
-                        map.sectors[sectorIndex].costBuffer = new uint8_t[SECTOR_SIZE];
+                        int globalX = sx * SECTOR_DIM + px;
+                        int globalY = sy * SECTOR_DIM + py;
 
-                        for (int32_t i = 0; i < SECTOR_SIZE; ++i)
+                        if (globalX < KERNEL_RADIUS || globalX >= map.width - KERNEL_RADIUS ||
+                            globalY < KERNEL_RADIUS || globalY >= map.height - KERNEL_RADIUS)
                         {
-                            map.sectors[sectorIndex].costBuffer[i] = elevations[i] < MAX_SLOPE ? 0 : 255;
+                            sector.costBuffer[py * SECTOR_DIM + px] = COST_WALL;
+                            hasExpensiveTerrain = true;
+                            continue;
                         }
-                    }
-                    else
-                    {
-                        map.sectors[sectorIndex].costType = Empty;
-                        map.sectors[sectorIndex].costBuffer = nullptr;
+
+                        // --- Average the Local Neighborhood ---
+                        float avg_nx = 0.0f;
+                        float avg_ny = 0.0f;
+                        float avg_nz = 0.0f;
+
+                        for (int ky = -KERNEL_RADIUS; ky <= KERNEL_RADIUS; ++ky)
+                        {
+                            for (int kx = -KERNEL_RADIUS; kx <= KERNEL_RADIUS; ++kx)
+                            {
+                                const int32_t idx = ((globalY + ky) * map.width + (globalX + kx)) * 4;
+                                avg_nx += (pixels[idx] / 127.5f) - 1.0f;
+                                avg_ny += (pixels[idx + 1] / 127.5f) - 1.0f;
+                                avg_nz += (pixels[idx + 2] / 127.5f) - 1.0f;
+                            }
+                        }
+                        avg_nx *= KERNEL_INV_TOTAL;
+                        avg_ny *= KERNEL_INV_TOTAL;
+                        avg_nz *= KERNEL_INV_TOTAL;
+
+                        if (std::abs(avg_nz) < 0.0001f)
+                            avg_nz = 0.0001f;
+                        float slopeValue = std::sqrt(avg_nx * avg_nx + avg_ny * avg_ny) / std::abs(avg_nz);
+
+                        uint8_t cost;
+                        if (slopeValue < LOW_SLOPE[0])
+                            cost = COST_CONSTANT;
+                        else if (slopeValue < LOW_SLOPE[1])
+                            cost = COST_LOW;
+                        else if (slopeValue < NORMAL_SLOPE[1])
+                            cost = COST_NORMAL;
+                        else if (slopeValue < HIGH_SLOPE[1])
+                            cost = COST_HIGH;
+                        else
+                            cost = COST_WALL;
+
+                        sector.costBuffer[py * SECTOR_DIM + px] = cost;
+                        if (cost != COST_CONSTANT)
+                            hasExpensiveTerrain = true;
                     }
                 }
-            }
 
-            for (int32_t y = 0; y < hSectors; ++y)
-            {
-                for (int32_t x = 0; x < wSectors; ++x)
+                if (!hasExpensiveTerrain)
                 {
-                    uint32_t currentID = y * wSectors + x;
-                    SectorData& currentSector = map.sectors[currentID];
-
-                    if (x + 1 < wSectors)
-                    {
-                        uint32_t eastID = y * wSectors + (x + 1);
-                        SectorData& eastSector = map.sectors[eastID];
-                        GeneratePortals(currentSector, currentID, eastSector, eastID, East);
-                    }
-
-                    if (y + 1 < hSectors)
-                    {
-                        uint32_t southID = (y + 1) * wSectors + x;
-                        SectorData& southSector = map.sectors[southID];
-                        GeneratePortals(currentSector, currentID, southSector, southID, South);
-                    }
+                    delete[] sector.costBuffer;
+                    sector.costBuffer = nullptr;
+                    sector.hasCost = false;
+                }
+                else
+                {
+                    sector.hasCost = true;
                 }
             }
-        };
-
-        TextureImporter::ReadPixels(heightmap, func);
+        }
     };
 
     TextureImporter::ReadPixels(normal, loadNormalFunc);

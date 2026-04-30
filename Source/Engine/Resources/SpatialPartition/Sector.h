@@ -3,15 +3,15 @@
 #include "Math/FixedMath.hpp"
 #include <cstdint>
 
-enum CostType : uint8_t
-{
-    Empty,
-    Unique
-};
+constexpr uint8_t COST_CONSTANT = 0;
+constexpr uint8_t COST_NORMAL = 1;
+constexpr uint8_t COST_LOW = 2;
+constexpr uint8_t COST_HIGH = 3;
+constexpr uint8_t COST_WALL = 255;
 
 struct SectorData
 {
-    CostType costType;
+    bool hasCost;
     uint8_t* costBuffer;
 };
 

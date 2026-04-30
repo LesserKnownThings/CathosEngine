@@ -70,5 +70,15 @@
             "group": "build",
             "problemMatcher": []
         },
+        {
+            "label": "Ninja Build",
+            "type": "shell",
+            "command": "ninja",
+            "args": [
+                "-C",
+                "${workspaceFolder}/Build/Linux/Debug"
+            ],
+            "problemMatcher": ["$gcc"]
+        }
     ]
 }

@@ -88,12 +88,6 @@ void World::RunSim(uint32_t tick)
 void World::Render(float alpha)
 {
     RenderingSystem& rs = RenderingSystem::Get();
-
-    for (int32_t i = 0; i < 100; ++i)
-    {
-        Gizmos::DrawCube(glm::vec4{ 1.0f, 0.0f, 0.0f, 1.0f }, glm::vec3{ 0.0f } + (float)i * glm::vec3(2.0f, 0.0f, 0.0f) - glm::vec3(50.0f, 0.0f, 0.0f), glm::vec3(0.5f));
-    }
-
     SystemRegistry::Get()
         .Run(registry, globalCmd, SystemPhase::Presentation);
 

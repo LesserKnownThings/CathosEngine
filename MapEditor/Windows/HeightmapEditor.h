@@ -9,6 +9,7 @@ class HeightmapEditor
   public:
     static HeightmapEditor& Get();
     void Generate(const std::string& heightmapTexturePath, const std::string& normalTexturePath);
+    void LoadMap(const std::string& path);
 
     CallMe::Event<void(const MapFormat&)> onMapCreated;
 

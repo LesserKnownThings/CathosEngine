@@ -2,7 +2,6 @@
 
 #include "Debug/DebugSystem.h"
 #include "Map/MapFormat.h"
-#include "Resources/SpatialPartition/Sector.h"
 
 #include <cstdint>
 #include <format>
@@ -37,6 +36,11 @@ bool MapUtils::ImportMap(const std::string& path, MapFormat& outMap)
         }
     }
 
+    int32_t portalsCount = 0;
+    file.read(reinterpret_cast<char*>(&portalsCount), sizeof(int32_t));
+    outMap.portals.resize(portalsCount);
+    file.read(reinterpret_cast<char*>(outMap.portals.data()), sizeof(Portal) * portalsCount);
+
     file.close();
 
     return true;
@@ -63,6 +67,9 @@ void MapUtils::ExportMap(const std::string& path, const MapFormat& map)
             }
         }
 
+        const int32_t portalsCount = map.portals.size();
+        stream.write(reinterpret_cast<const char*>(&portalsCount), sizeof(int32_t));
+        stream.write(reinterpret_cast<const char*>(map.portals.data()), sizeof(Portal) * portalsCount);
         stream.close();
     }
 }

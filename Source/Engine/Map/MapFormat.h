@@ -1,9 +1,44 @@
 #pragma once
 
-#include "Resources/SpatialPartition/Sector.h"
-
+#include "Math/FixedMath.hpp"
 #include <cstdint>
 #include <vector>
+
+constexpr int32_t SECTOR_DIM = 10;
+constexpr int32_t SECTOR_SIZE = SECTOR_DIM * SECTOR_DIM;
+
+constexpr uint8_t CLEAR_CELL = 1;
+constexpr uint8_t WALL_CELL = 255;
+
+constexpr uint8_t COST_CONSTANT = 0;
+constexpr uint8_t COST_NORMAL = 1;
+constexpr uint8_t COST_LOW = 2;
+constexpr uint8_t COST_HIGH = 3;
+constexpr uint8_t COST_WALL = 255;
+
+enum class PortalDirection : uint8_t
+{
+    Vertical,
+    Horizontal,
+};
+
+struct Portal
+{
+    int32_t sector;
+    int32_t neighbor;
+
+    int32_t start;
+    int32_t end;
+    int32_t center;
+
+    PortalDirection direction;
+};
+
+struct SectorData
+{
+    bool hasCost;
+    uint8_t* costBuffer;
+};
 
 /**
 Cathos map format (.cmf) is the format used to generate the map for the game
@@ -26,13 +61,6 @@ The sector cost is:
 255 -> wall
 
 */
-
-constexpr int32_t SECTOR_DIM = 10;
-constexpr int32_t SECTOR_SIZE = SECTOR_DIM * SECTOR_DIM;
-
-constexpr uint8_t CLEAR_CELL = 1;
-constexpr uint8_t WALL_CELL = 255;
-
 struct MapFormat
 {
     // Physical size of the map, this will be split into sectors (160x160 is the smallest map size 16x16 sectors)
@@ -40,4 +68,26 @@ struct MapFormat
     int32_t height; // multiple of 160
 
     std::vector<SectorData> sectors;
+    std::vector<Portal> portals;
+
+    int32_t HorizontalSectors() const { return width / SECTOR_DIM; }
+    int32_t VerticalSectors() const { return height / SECTOR_DIM; }
+
+    int32_t GetSectorIndex(const Float3& position) const
+    {
+        return static_cast<int32_t>(position.x) * HorizontalSectors() + static_cast<int32_t>(position.x);
+    }
+
+    Float3 GetPortalCenter(int32_t index) const
+    {
+        return GetPortalPos(index, portals[index].center);
+    }
+
+    Float3 GetPortalPos(int32_t portalIndex, int32_t slotIndex) const
+    {
+        const Portal& portal = portals[portalIndex];
+        const int32_t x = slotIndex % SECTOR_DIM + portal.sector * SECTOR_DIM;
+        const int32_t z = slotIndex / SECTOR_DIM + portal.sector * SECTOR_DIM;
+        return Float3{ x, 0.0f, z };
+    }
 };

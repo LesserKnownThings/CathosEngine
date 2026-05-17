@@ -17,6 +17,8 @@ class Gizmos
     static void DrawCube(const glm::vec4& color, const glm::vec3& position, const glm::vec3& halfExtents);
     static void DrawSphere(const glm::vec4& color, const glm::vec3& center, float radius, int32_t segments = 16);
 
+    static void DrawLine(const glm::vec4& color, const glm::vec3& from, const glm::vec3& to);
+
   private:
     std::vector<GizmosVertex> verts;
 

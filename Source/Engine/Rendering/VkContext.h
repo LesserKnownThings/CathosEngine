@@ -38,8 +38,9 @@ struct VkContext
     VkExtent2D swapChainExtent;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkSwapchainKHR swapChain = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    VkRenderPass additivePass = VK_NULL_HANDLE;
+    VkRenderPass worldRenderPass = VK_NULL_HANDLE;
+    VkRenderPass uiRenderPass = VK_NULL_HANDLE;
+    VkRenderPass additiveRenderPass = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorPool bindlessPool = VK_NULL_HANDLE;
 

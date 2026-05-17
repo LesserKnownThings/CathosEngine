@@ -3,9 +3,9 @@
 #include <fstream>
 #include <iostream>
 
-std::vector<char> FileHelper::ReadFile(const std::string &fileName)
+std::vector<char> FileHelper::ReadFile(const std::string& fileName, std::ios::openmode flags)
 {
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
+    std::ifstream file(fileName, flags);
 
     if (!file.is_open())
     {
@@ -23,15 +23,15 @@ std::vector<char> FileHelper::ReadFile(const std::string &fileName)
     return buffer;
 }
 
-void FileHelper::GetFilesFromDirectory(const std::string &folderPath, std::vector<fs::path> &files,
-                                       const std::vector<std::string> &extensionsToIgnore,
-                                       const std::string &extension, bool recursive)
+void FileHelper::GetFilesFromDirectory(const std::string& folderPath, std::vector<fs::path>& files,
+                                       const std::vector<std::string>& extensionsToIgnore,
+                                       const std::string& extension, bool recursive)
 {
     try
     {
         if (recursive)
         {
-            for (const auto &entry : fs::recursive_directory_iterator(folderPath))
+            for (const auto& entry : fs::recursive_directory_iterator(folderPath))
             {
                 if (entry.is_regular_file() &&
                     (extension.empty() || entry.path().extension().string() == extension))
@@ -41,7 +41,7 @@ void FileHelper::GetFilesFromDirectory(const std::string &folderPath, std::vecto
                         const std::string extensionStr = entry.path().extension().string();
                         auto it = std::ranges::find_if(extensionsToIgnore.begin(),
                                                        extensionsToIgnore.end(),
-                                                       [extensionStr](const std::string &iterator)
+                                                       [extensionStr](const std::string& iterator)
                                                        { return iterator == extensionStr; });
 
                         if (it != extensionsToIgnore.end())
@@ -56,7 +56,7 @@ void FileHelper::GetFilesFromDirectory(const std::string &folderPath, std::vecto
         }
         else
         {
-            for (const auto &entry : fs::directory_iterator(folderPath))
+            for (const auto& entry : fs::directory_iterator(folderPath))
             {
                 if (entry.is_regular_file() &&
                     (extension.empty() || entry.path().extension().string() == extension))
@@ -66,7 +66,7 @@ void FileHelper::GetFilesFromDirectory(const std::string &folderPath, std::vecto
                         const std::string extensionStr = entry.path().extension().string();
                         auto it = std::ranges::find_if(extensionsToIgnore.begin(),
                                                        extensionsToIgnore.end(),
-                                                       [extensionStr](const std::string &iterator)
+                                                       [extensionStr](const std::string& iterator)
                                                        { return iterator == extensionStr; });
 
                         if (it != extensionsToIgnore.end())
@@ -80,7 +80,7 @@ void FileHelper::GetFilesFromDirectory(const std::string &folderPath, std::vecto
             }
         }
     }
-    catch (const fs::filesystem_error &e)
+    catch (const fs::filesystem_error& e)
     {
         std::cerr << "Error: " << e.what() << std::endl;
     }

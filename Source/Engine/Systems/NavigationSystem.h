@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 class CommandBuffer;
 class Registry;
 
@@ -10,5 +12,5 @@ class NavigationSystem
 
   private:
     void Init(Registry* registry, CommandBuffer& cmd);
-    void Run(Registry* registry, CommandBuffer& cmd);
+    void RunSync(Registry* registry, CommandBuffer& cmd, uint32_t tick);
 };

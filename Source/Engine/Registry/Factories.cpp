@@ -1,10 +1,12 @@
 #include "Factories.h"
 #include "Components/Collider.h"
+#include "Components/Navigation/PathRequest.h"
 #include "Components/Transform.h"
 #include "Components/Visibility.h"
 #include "Game/Camera.h"
 #include "Resources/MaterialMesh3D.h"
 #include "Resources/Model.h"
+#include "UI/TextRenderer.h"
 
 std::unordered_map<uint32_t, Factories::EmplaceFn> Factories::componentFactory;
 
@@ -28,4 +30,8 @@ Factories::Factories()
 
     // Physics
     RegisterComponentType<Collider>();
+
+    RegisterComponentType<PathRequest>();
+
+    RegisterComponentType<TextRenderer>();
 }

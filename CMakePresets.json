@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "Linux Editor",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/Build/Linux/Editor/Debug",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "EDITOR": "ON"
+      }
+    },
+    {
+      "name": "Linux Engine",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/Build/Linux/Debug",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "EDITOR": "OFF"
+      }
+    }
+  ]
+}

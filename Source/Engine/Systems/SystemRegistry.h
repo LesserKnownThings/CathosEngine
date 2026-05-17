@@ -60,9 +60,9 @@ class SystemRegistry
   public:
     static SystemRegistry& Get();
 
-    void Init(Registry* registry, CommandBuffer& globalCmd);
+    void Init(Registry* registry, CommandBuffer& cmd);
 
-    void Run(Registry* registry, CommandBuffer& globalCmd, SystemPhase phase);
+    void Run(Registry* registry, CommandBuffer& cmd, SystemPhase phase);
     void RunSync(Registry* registry, CommandBuffer& globalCmd, uint32_t tick, SystemPhase phase);
 
     void Add(const SystemInfo& info)

@@ -8,11 +8,15 @@
 #include "InputManager.h"
 #include "Math/FixedMath.hpp"
 #include "Netcode/NetworkManager.h"
+#include "Registry/CommandBuffer.h"
 #include "Registry/Registry.h"
 #include "Rendering/Gizmos.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/AssetPath.h"
+#include "Resources/AssetServer.h"
+#include "Resources/Font.h"
 #include "Systems/SystemRegistry.h"
+#include "UI/TextRenderer.h"
 #include "Utilities/SceneUtilities.h"
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
@@ -32,7 +36,12 @@ bool World::Initialize(int argc, const char* argv[])
     registry = new Registry();
     CreateWorld();
 
-    SystemRegistry::Get().Init(registry, globalCmd);
+    CommandBuffer cmd{};
+    SystemRegistry::Get().Init(registry, cmd);
+    cmd.Execute(registry);
+
+    AssetServer& as = registry->GetAssetServer();
+    as.Load<Font>(AssetPath{ "Data/Fonts/TestFont.casset" });
 
     return true;
 }
@@ -50,7 +59,9 @@ void World::Run()
     NetworkManager::Get().Run();
     InputManager::Get().PollInput();
 
-    SystemRegistry::Get().Run(registry, globalCmd, SystemPhase::Simulation);
+    CommandBuffer cmd{};
+    SystemRegistry::Get().Run(registry, cmd, SystemPhase::Simulation);
+    cmd.Execute(registry);
 
     // registry->Run();
     player->Run(simTick);
@@ -81,18 +92,29 @@ void World::NetPulse()
 
 void World::RunSim(uint32_t tick)
 {
+    CommandBuffer cmd{};
+
     simTick = tick;
-    SystemRegistry::Get().RunSync(registry, globalCmd, tick, SystemPhase::Simulation);
+    SystemRegistry::Get().RunSync(registry, cmd, tick, SystemPhase::Simulation);
+
+    cmd.Execute(registry);
 }
 
 void World::Render(float alpha)
 {
+    CommandBuffer cmd{};
+
     RenderingSystem& rs = RenderingSystem::Get();
     SystemRegistry::Get()
-        .Run(registry, globalCmd, SystemPhase::Presentation);
+        .Run(registry, cmd, SystemPhase::Presentation);
+
+    cmd.Execute(registry);
 
     rs.BeginFrame();
-    rs.Draw(registry, alpha);
+    rs.Render3D(registry, alpha);
+#if !EDITOR
+    rs.RenderUI(registry);
+#endif
     rs.EndFrame();
 }
 
@@ -125,12 +147,12 @@ void World::CreateWorld()
             ColliderType::Sphere }
     };
 
-    // SceneUtilities::CreateScene(registry, globalCmd, tr1, data);
-}
+    entt::registry& reg = registry->Get();
+    auto testText = reg.create();
+    entt::resource<Font> font = registry->GetAssetServer().Load<Font>(AssetPath{ "Data/Fonts/TestFont.casset" });
+    reg.emplace<TextRenderer>(testText, font, "Hello World 12345", 75.0f);
 
-void World::EndFrameCommandBuffer()
-{
-    globalCmd.Execute(registry);
+    // SceneUtilities::CreateScene(registry, globalCmd, tr1, data);
 }
 
 void World::GCPass()

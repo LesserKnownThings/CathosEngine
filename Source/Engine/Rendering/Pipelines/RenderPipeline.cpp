@@ -4,10 +4,6 @@
 #include <iostream>
 #include <vulkan/vulkan_core.h>
 
-RenderPipeline::RenderPipeline(const VkContext& inContext) : context(inContext)
-{
-}
-
 void RenderPipeline::Destroy()
 {
     for (DescriptorSetLayoutInfo& layoutInfo : descriptorLayouts)

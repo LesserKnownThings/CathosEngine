@@ -6,8 +6,10 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "-B", "Build/Linux/Debug",
-                "-S", ".",
+                "-B",
+                "Build/Linux/Debug",
+                "-S",
+                ".",
                 "-G Ninja",
                 "-DCMAKE_TOOLCHAIN_FILE=/home/mursu/Documents/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "-DVCPKG_TARGET_TRIPLET=x64-linux",
@@ -24,12 +26,14 @@
             "problemMatcher": []
         },
         {
-            "label": "Linux Map Editor Debug Config",
+            "label": "Linux Editor Debug Config",
             "type": "shell",
             "command": "cmake",
             "args": [
-                "-B", "Build/Linux/MapEditor/Debug",
-                "-S", ".",
+                "-B",
+                "Build/Linux/Editor/Debug",
+                "-S",
+                ".",
                 "-G Ninja",
                 "-DCMAKE_TOOLCHAIN_FILE=/home/mursu/Documents/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "-DVCPKG_TARGET_TRIPLET=x64-linux",
@@ -37,7 +41,7 @@
                 "-DCMAKE_CXX_COMPILER=clang++",
                 "-DCMAKE_C_COMPILER=clang",
                 "-DCMAKE_BUILD_TYPE=Debug",
-                "-DMAP_EDITOR=1"
+                "-DEDITOR=1"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -50,18 +54,20 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "-B", "Build/Windows/Debug",
-                "-S", ".",
+                "-B",
+                "Build/Windows/Debug",
+                "-S",
+                ".",
                 "-G Ninja",
                 "-DCMAKE_TOOLCHAIN_FILE=/home/mursu/Documents/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "-DCMAKE_SYSTEM_NAME=Windows",
-                "-DCMAKE_CXX_COMPILER=clang++",                
-                "-DCMAKE_C_COMPILER=clang",               
+                "-DCMAKE_CXX_COMPILER=clang++",
+                "-DCMAKE_C_COMPILER=clang",
                 "-DCMAKE_C_COMPILER_TARGET=x86_64-w64-windows-gnu",
                 "-DCMAKE_CXX_COMPILER_TARGET=x86_64-w64-windows-gnu",
                 "-DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres",
-                 "-DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic",
-                 "-DVCPKG_APPLOCAL_DEPS=OFF",
+                "-DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic",
+                "-DVCPKG_APPLOCAL_DEPS=OFF",
                 "-DCMAKE_BUILD_TYPE=Debug"
             ],
             "options": {
@@ -71,14 +77,40 @@
             "problemMatcher": []
         },
         {
-            "label": "Ninja Build",
+            "label": "Debug Build",
             "type": "shell",
             "command": "ninja",
             "args": [
                 "-C",
                 "${workspaceFolder}/Build/Linux/Debug"
             ],
-            "problemMatcher": ["$gcc"]
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Debug Editor Build",
+            "type": "shell",
+            "command": "ninja",
+            "args": [
+                "-C",
+                "${workspaceFolder}/Build/Linux/Editor/Debug"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Switch Linux Editor Config",
+            "type": "shell",
+            "command": "cmake --preset Linux Editor && ln -sf Build/Linux/Editor/Debug/compile_commands.json compile_commands.json",
+            "problemMatcher": []
+        },
+        {
+            "label": "Switch Linux Engine Config",
+            "type": "shell",
+            "command": "cmake --preset Linux Engine && ln -sf Build/Linux/Debug/compile_commands.json compile_commands.json",
+            "problemMatcher": []
         }
     ]
 }

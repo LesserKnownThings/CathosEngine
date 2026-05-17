@@ -23,6 +23,10 @@
     "vulkan-memory-allocator",
     "volk",
     "assimp",
-    "tracy"
+    "tracy",
+    "freetype",
+    "nlohmann-json",
+    "tinyfiledialogs",
+    "msdfgen"
   ]
 }

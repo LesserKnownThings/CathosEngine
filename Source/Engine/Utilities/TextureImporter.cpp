@@ -21,7 +21,7 @@ bool TextureImporter::ImportTexture(const std::string& path, Texture2D* outTextu
     {
         // TODO need to either manually calculate the mip levels or make sure this is correct
         outTexture->data.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-        RenderingSystem::Get().CreateSRGBATexture(outTexture, pixels);
+        RenderingSystem::Get().CreateTexture(outTexture->data, pixels, outTexture->renderTexture, outTexture->textureIndex);
         stbi_image_free(pixels);
         return true;
     }

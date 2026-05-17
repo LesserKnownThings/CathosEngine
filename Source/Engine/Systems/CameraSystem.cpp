@@ -20,6 +20,7 @@ void CameraSystem::Init(Registry* registry, CommandBuffer& cmd)
 {
     // I'm not going to support multiple cameras, that's why the cam is a resource
     registry->AddResource<Camera>();
+
     CameraTransform& camTransform = registry->AddResource<CameraTransform>(glm::quat(), glm::vec3(0.f, 45.f, -5.f));
     camTransform.LookAt(glm::vec3(0.0f));
     registry->AddResource<CameraGlobalTransform>();

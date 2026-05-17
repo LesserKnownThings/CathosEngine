@@ -12,10 +12,15 @@
             "args": ["server"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                {                    
+                    "name": "DEBUGINFOD_URLS",
+                    "value": ""   
+                }
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
-            "preLaunchTask": "Ninja Build",
+            "preLaunchTask": "Debug Build",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
@@ -25,21 +30,34 @@
                 {
                     "description": "Set Disassembly Flavor to Intel",
                     "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable debuginfod",
+                    "text": "-gdb-set debuginfod enabled off",
                     "ignoreFailures": true
                 }
             ]
         },
         {
-            "name": "Map Editor",
+            "name": "Editor",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/Build/Linux/MapEditor/Debug/CathosEngine",
+            "program": "${workspaceFolder}/Build/Linux/Editor/Debug/CathosEngine",
             "args": ["server"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                {                    
+                    "name": "DEBUGINFOD_URLS",
+                    "value": ""
+                }
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
+            "miDebuggerArgs": "-iex 'set debuginfod enabled off'",
+            "additionalSOLibSearchPath": "",
+            "preLaunchTask": "Debug Editor Build",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
@@ -49,6 +67,16 @@
                 {
                     "description": "Set Disassembly Flavor to Intel",
                     "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable debuginfod",
+                    "text": "-gdb-set debuginfod enabled off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Bypass system-supplied DSO stall",
+                    "text": "maint set target-non-stop on",
                     "ignoreFailures": true
                 }
             ]

@@ -9,9 +9,11 @@ set(GLOBAL_SOURCES "")
 file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/Source/*.cpp")
 list(APPEND GLOBAL_SOURCES ${SOURCES})
 
-if (MAP_EDITOR)
-    file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/MapEditor/*.cpp")
+if (EDITOR)
+    file(GLOB_RECURSE SOURCES "${CMAKE_SOURCE_DIR}/Editor/*.cpp")
     list(APPEND GLOBAL_SOURCES ${SOURCES})
+
+    find_package(msdfgen CONFIG REQUIRED)
 endif()
 
 # THIRD PARTIES
@@ -29,6 +31,8 @@ find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(Tracy REQUIRED)
+find_package(FreeType REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 ###############
 
 add_executable(CathosEngine ${GLOBAL_SOURCES})
@@ -36,14 +40,22 @@ add_executable(CathosEngine ${GLOBAL_SOURCES})
 target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/Source/Engine)
 target_compile_definitions(CathosEngine PUBLIC VK_NO_PROTOTYPES)
 
-option(MAP_EDITOR "Enable Map Editor" OFF)
+option(EDITOR "Enable Editor" OFF)
 
-if (MAP_EDITOR)
-    target_compile_definitions(CathosEngine PUBLIC MAP_EDITOR=1 IMGUI_IMPL_VULKAN_USE_VOLK)
-    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/MapEditor)
-    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/MapEditor/imgui)
+if (EDITOR)
+    target_compile_definitions(CathosEngine PUBLIC EDITOR=1 IMGUI_IMPL_VULKAN_USE_VOLK)
+    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/Editor)
+    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/Editor/imgui)
+    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/Editor/msdf-atlas-gen)
+    target_include_directories(CathosEngine PUBLIC ${CMAKE_SOURCE_DIR}/Editor/msdfgen)
+
+    target_link_libraries(CathosEngine
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/External/libmsdf-atlas-gen.so
+    msdfgen::msdfgen
+    )
 else()
-    target_compile_definitions(CathosEngine PUBLIC MAP_EDITOR=0)
+    target_compile_definitions(CathosEngine PUBLIC EDITOR=0)
 endif()
 
 target_link_libraries(CathosEngine
@@ -57,4 +69,6 @@ PRIVATE
     GameNetworkingSockets::GameNetworkingSockets
     assimp::assimp
     Tracy::TracyClient
+    Freetype::Freetype
+    nlohmann_json::nlohmann_json
 )

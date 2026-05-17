@@ -18,19 +18,21 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
+REGISTER_PIPELINE(PBRPipeline, PipelineType::PBR)
+
 constexpr std::string PBR_LOG = "PBR";
 
 constexpr int32_t PBR_DESCRIPTOR_SETS = 3;
 constexpr int32_t PBR_SHADER_STAGES = 2;
 
-PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
+void PBRPipeline::Initialize()
 {
     // SHADER STAGES
     std::array<VkPipelineShaderStageCreateInfo, PBR_SHADER_STAGES> shaderStages{};
 
     // Vertex
     const std::string vertShaderPath = shaderPath + "/vert.spv";
-    auto vertShaderCode = FileHelper::ReadFile(vertShaderPath);
+    auto vertShaderCode = FileHelper::ReadFile(vertShaderPath, std::ios::binary | std::ios::ate);
 
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
 
@@ -45,7 +47,7 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
 
     // Fragment
     const std::string fragShaderPath = shaderPath + "/frag.spv";
-    auto fragShaderCode = FileHelper::ReadFile(fragShaderPath);
+    auto fragShaderCode = FileHelper::ReadFile(fragShaderPath, std::ios::binary | std::ios::ate);
 
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
 
@@ -112,7 +114,6 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
 
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.pNext = nullptr;
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
@@ -149,10 +150,17 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterizer.depthBiasEnable = VK_FALSE;
-    rasterizer.depthBiasConstantFactor = 0.0f;
-    rasterizer.depthBiasClamp = 0.0f;
-    rasterizer.depthBiasSlopeFactor = 0.0f;
-    rasterizer.pNext = nullptr;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -163,36 +171,6 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     multisampling.alphaToCoverageEnable = VK_FALSE;
     multisampling.alphaToOneEnable = VK_FALSE;
     multisampling.pNext = nullptr;
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.blendEnable = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-    colorBlending.blendConstants[0] = 0.0f;
-    colorBlending.blendConstants[1] = 0.0f;
-    colorBlending.blendConstants[2] = 0.0f;
-    colorBlending.blendConstants[3] = 0.0f;
-    colorBlending.pNext = nullptr;
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -222,11 +200,6 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
         descriptorSetLayouts[2] = textures.layout;
         descriptorSets[2] = textures.set;
     }
-
-    // std::array<VkPushConstantRange, 1> pushConstants{};
-    // pushConstants[0].offset = 0;
-    // pushConstants[0].size = sizeof(SharedConstants);
-    // pushConstants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     pipelineLayoutInfo.pPushConstantRanges = nullptr;
     pipelineLayoutInfo.pushConstantRangeCount = 0;
@@ -261,12 +234,12 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = context.renderPass;
+    pipelineInfo.renderPass = context.worldRenderPass;
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
@@ -275,7 +248,7 @@ PBRPipeline::PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext)
     if (vkCreateGraphicsPipelines(context.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                   &pipeline) != VK_SUCCESS)
     {
-        LOG(PBR_LOG, Error, "Failed to create PBR pipelines!");
+        LOG(PBR_LOG, Error, "Failed to create PBR pipeline!");
     }
 
     for (VkPipelineShaderStageCreateInfo& stage : shaderStages)

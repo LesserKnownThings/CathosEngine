@@ -78,3 +78,11 @@ void Gizmos::DrawSphere(const glm::vec4& color, const glm::vec3& center, float r
     // YZ
     drawCircle(1, 2);
 }
+
+void Gizmos::DrawLine(const glm::vec4& color, const glm::vec3& from, const glm::vec3& to)
+{
+    std::vector<GizmosVertex>& verts = Gizmos::Get().verts;
+
+    verts.push_back({ from, color });
+    verts.push_back({ to, color });
+}

@@ -9,9 +9,8 @@ struct VkContext;
 class PBRPipeline : public RenderPipeline
 {
   public:
-    PBRPipeline(const VkContext& inContext);
-
-    EPipelineType GetType() const override { return EPipelineType::PBR; }
+    PBRPipeline(const VkContext& inContext) : RenderPipeline(inContext) {}
+    void Initialize() override;
 
   private:
     const std::string shaderPath = "Data/Engine/Shaders/PBR";

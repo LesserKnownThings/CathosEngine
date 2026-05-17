@@ -8,20 +8,21 @@
 #include "Utilities/FileHelper.h"
 #include <glm/ext/vector_float3.hpp>
 
+REGISTER_PIPELINE(GizmosPipeline, PipelineType::Gizmos)
+
 constexpr std::string GIZMOS_LOG = "Gizmos";
 
 constexpr int32_t GIZMOS_SHADER_STAGES = 2;
 constexpr int32_t GIZMOS_DESCRIPTOR_SETS = 1;
 
-GizmosPipeline::GizmosPipeline(const VkContext& inContext)
-    : RenderPipeline(inContext)
+void GizmosPipeline::Initialize()
 {
     // SHADER STAGES
     std::array<VkPipelineShaderStageCreateInfo, GIZMOS_SHADER_STAGES> shaderStages{};
 
     // Vertex
     const std::string vertShaderPath = shaderPath + "/vert.spv";
-    auto vertShaderCode = FileHelper::ReadFile(vertShaderPath);
+    auto vertShaderCode = FileHelper::ReadFile(vertShaderPath, std::ios::binary | std::ios::ate);
 
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
 
@@ -36,7 +37,7 @@ GizmosPipeline::GizmosPipeline(const VkContext& inContext)
 
     // Fragment
     const std::string fragShaderPath = shaderPath + "/frag.spv";
-    auto fragShaderCode = FileHelper::ReadFile(fragShaderPath);
+    auto fragShaderCode = FileHelper::ReadFile(fragShaderPath, std::ios::binary | std::ios::ate);
 
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
 
@@ -138,14 +139,8 @@ GizmosPipeline::GizmosPipeline(const VkContext& inContext)
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.logicOp = VK_LOGIC_OP_COPY;
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
-    colorBlending.blendConstants[0] = 0.0f;
-    colorBlending.blendConstants[1] = 0.0f;
-    colorBlending.blendConstants[2] = 0.0f;
-    colorBlending.blendConstants[3] = 0.0f;
-    colorBlending.pNext = nullptr;
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -195,12 +190,12 @@ GizmosPipeline::GizmosPipeline(const VkContext& inContext)
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = context.renderPass;
+    pipelineInfo.renderPass = context.worldRenderPass;
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;

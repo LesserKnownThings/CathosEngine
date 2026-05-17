@@ -4,13 +4,18 @@
 #include "DescriptorRegistry.h"
 #include "Frame.h"
 #include "Pipelines/RenderPipeline.h"
+#include "SwapChainData.h"
 #include "VkContext.h"
 #include "VkData.h"
 
+#if EDITOR
+#include <functional>
+#endif
+
 #include <SDL3/SDL_video.h>
-#include <array>
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
+
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float2.hpp>
 #include <glm/ext/vector_int2.hpp>
@@ -27,12 +32,24 @@ struct View;
 struct Texture2D;
 struct MeshData;
 struct MeshGPUData;
+struct TextureData;
+struct UIMeshGPUData;
+struct UIMeshData;
 
 class Registry;
 
-#if MAP_EDITOR
+#if EDITOR
 struct ImGui_ImplVulkan_InitInfo;
 #endif
+
+#define REGISTER_PIPELINE(Pipeline, PipelineType)                            \
+    inline static struct _##Pipeline                                         \
+    {                                                                        \
+        _##Pipeline()                                                        \
+        {                                                                    \
+            RenderingSystem::Get().RegisterPipeline<Pipeline>(PipelineType); \
+        }                                                                    \
+    } instance_##Pipeline;
 
 constexpr int32_t MAX_FRAMES_IN_FLIGHT = 2;
 // Only supporting double buffering for smoother movement
@@ -44,6 +61,7 @@ constexpr uint32_t INTEL_GPU = 0x8086;
 
 constexpr int32_t MAX_INSTANCE_BUFFER = 20000;
 constexpr int32_t MAX_TEXTURE_COUNT = 1000;
+constexpr int32_t INITIAL_UI_INSTANCES = 10000;
 
 struct SwapChainSupportDetails
 {
@@ -60,30 +78,10 @@ struct SingleTimeCommandBuffer
     VkQueue queue = VK_NULL_HANDLE;
 };
 
-struct SwapChainData
-{
-    void Resize(uint32_t size)
-    {
-        swapChainFramebuffers.resize(size);
-        images.resize(size);
-        views.resize(size);
-        depths.resize(size);
-        colors.resize(size);
-    }
-
-    std::vector<VkFramebuffer> swapChainFramebuffers;
-
-    std::vector<VkImage> images;
-    std::vector<VkImageView> views;
-
-    std::vector<AllocatedTexture> depths;
-    std::vector<AllocatedTexture> colors;
-};
-
 struct RenderContext
 {
     VkCommandBuffer commandBuffer;
-    std::unordered_map<EPipelineType, RenderPipeline*> pipelines;
+    std::unordered_map<PipelineType, RenderPipeline*> pipelines;
 };
 
 class RenderingSystem
@@ -97,13 +95,27 @@ class RenderingSystem
 
     void BeginFrame();
 
-    // This draw function only supports isntanced drawing
-    // It will batch both materials and meshes and do an instance drawing based on that
     void Draw(Registry* registry, float alpha);
     void DrawGizmos();
     void EndFrame();
 
-    RenderPipeline* GetRenderPipeline(EPipelineType type) const;
+    void Render3D(Registry* registry, float alpha);
+
+#if EDITOR
+    void RenderUI(Registry* registry, std::function<void()> editorRenderFunc);
+#else
+    void RenderUI(Registry* registry);
+#endif
+
+    void SetViewportFullScreen();
+    void SetScissorFullScreen();
+
+    RenderPipeline* GetRenderPipeline(PipelineType type) const;
+
+    template <typename T>
+    void RegisterPipeline(PipelineType type);
+
+    AllocatedBuffer CreateBuffer(int32_t size, VkBufferUsageFlags bufferFlags, VmaMemoryUsage memoryFlags, VmaAllocationCreateFlags allocationFlags);
 
     void DestroyBuffer(AllocatedBuffer buffer);
     void DestroyTexture(AllocatedTexture texture);
@@ -116,16 +128,23 @@ class RenderingSystem
     }
     void UnmapMemory(VmaAllocation allocation);
 
-    void CreateSRGBATexture(Texture2D* textureData, void* pixels);
+    void CreateTexture(const TextureData& textureData, uint8_t* pixels, AllocatedTexture& renderTexture, uint32_t& textureIndex);
 
     MeshGPUData CreateMesh(const MeshData& meshData);
+    UIMeshGPUData CreateMesh(const UIMeshData& meshData);
+
     void DestroyMesh(const MeshGPUData& mesh);
     void UpdateCameraMatrix(const glm::mat4& projectionView);
 
-#if MAP_EDITOR
+#if EDITOR
     void InitImGui();
-    VkCommandBuffer GetCurrentCommandBuffer() const { return GetCurrentFrame().commandBuffer; }
+    VkCommandBuffer GetCurrentCommandBuffer() const
+    {
+        return GetCurrentFrame().commandBuffer;
+    }
 #endif
+
+    const VkContext& GetContext() const { return context; }
 
     float GetScreenWidth() const
     {
@@ -149,7 +168,10 @@ class RenderingSystem
         return descriptorRegistry;
     }
 
-    SDL_Window* GetWindow() const { return window; }
+    SDL_Window* GetWindow() const
+    {
+        return window;
+    }
 
   private:
     static uint32_t MIN_UNIFORM_ALIGNMENT;
@@ -165,7 +187,8 @@ class RenderingSystem
     bool CreateLogicalDevice();
     bool CreateMemoryAllocator();
     bool CreateSwapChain();
-    bool CreateRenderPass();
+    bool Create3DRenderPass();
+    bool CreateUIRenderPass();
     bool CreateFrameBuffers();
     bool CreateCommandPools();
     bool CreateDescriptorPool();
@@ -174,8 +197,8 @@ class RenderingSystem
     bool CheckDeviceExtensionSupport(VkPhysicalDevice device) const;
 
     void CreateRenderFrames();
-    void CreateRenderPipelines();
     void SetupDebugMessenger();
+    void InitializeRenderPipelines();
 
     void CleanupSwapChain();
     void CleanupPendingDestroyBuffers();
@@ -183,7 +206,7 @@ class RenderingSystem
 
     void CreateColorResources();
     void CreateDepthResources();
-    void CreateDescriptorRegistry();
+    void CreateDescriptorsAndBuffers();
 
     VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags,
                                 uint32_t mipLevels);
@@ -227,7 +250,10 @@ class RenderingSystem
     void CreateUniversalDescriptors();
     void CreateInstanceDescriptors();
     void CreateTextureDescriptors();
-    void CreateGizmosDescriptors();
+    void CreateGizmosBuffers();
+
+    // TODO I think I should maybe move this to the descriptor creation
+    void CreateUIInstanceBuffer();
 
     void AllocateDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& outSet, VkDescriptorPool pool, const void* next = nullptr);
     void UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set, AllocatedBuffer buffer,
@@ -263,13 +289,16 @@ class RenderingSystem
     std::queue<int32_t> cachedTextureIndices;
 
     std::vector<Frame> renderFrames;
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> additiveFrameBuffers;
+    // std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> additiveFrameBuffers;
 
-    std::unordered_map<EPipelineType, RenderPipeline*> pipelines;
+    std::unordered_map<PipelineType, RenderPipeline*> pipelines;
 
     std::vector<AllocatedBuffer> buffersPendingDelete;
     std::vector<AllocatedTexture> imagesPendingDelete;
+
+    // Other useful buffers
     AllocatedBuffer gizmosBuffer;
+    AllocatedBuffer uiInstanceBuffer;
 
     std::vector<const char*> instanceExtensions = { VK_EXT_DEBUG_UTILS_EXTENSION_NAME };
 
@@ -282,3 +311,9 @@ class RenderingSystem
 
     friend class World;
 };
+
+template <typename T>
+void RenderingSystem::RegisterPipeline(PipelineType type)
+{
+    pipelines.emplace(type, new T(context));
+}

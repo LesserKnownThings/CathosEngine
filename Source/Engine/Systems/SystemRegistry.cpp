@@ -11,7 +11,7 @@ SystemRegistry& SystemRegistry::Get()
     return instance;
 }
 
-void SystemRegistry::Init(Registry* registry, CommandBuffer& globalCmd)
+void SystemRegistry::Init(Registry* registry, CommandBuffer& cmd)
 {
     Bake();
 
@@ -20,7 +20,7 @@ void SystemRegistry::Init(Registry* registry, CommandBuffer& globalCmd)
         if (info.creator)
         {
             info.creator();
-            info.initFunc(registry, globalCmd);
+            info.initFunc(registry, cmd);
         }
     }
 }
@@ -93,24 +93,24 @@ void SystemRegistry::Bake()
     }
 }
 
-void SystemRegistry::Run(Registry* registry, CommandBuffer& globalCmd, SystemPhase phase)
+void SystemRegistry::Run(Registry* registry, CommandBuffer& cmd, SystemPhase phase)
 {
     for (auto& sys : sortedSystems)
     {
         if (sys.phase == phase)
         {
-            sys.func(registry, globalCmd);
+            sys.func(registry, cmd);
         }
     }
 }
 
-void SystemRegistry::RunSync(Registry* registry, CommandBuffer& globalCmd, uint32_t tick, SystemPhase phase)
+void SystemRegistry::RunSync(Registry* registry, CommandBuffer& cmd, uint32_t tick, SystemPhase phase)
 {
     for (auto& sys : sortedSystems)
     {
         if (sys.phase == phase)
         {
-            sys.syncFunc(registry, globalCmd, tick);
+            sys.syncFunc(registry, cmd, tick);
         }
     }
 }

@@ -1,23 +1,25 @@
 #include "RenderingSystem.h"
 #include "BindingDefinitions.h"
 #include "Callme/CallMe.Event.h"
-#include "Components/Collider.h"
 #include "Components/Transform.h"
 #include "Debug/DebugSystem.h"
 #include "Frame.h"
-#include "Game/Camera.h"
 #include "InputManager.h"
-#include "Math/FixedMath.hpp"
 #include "Pipelines/PBRPipeline.h"
 #include "Registry/Registry.h"
 #include "Rendering/Gizmos.h"
 #include "Rendering/Pipelines/GizmosPipeline.h"
 #include "Rendering/Pipelines/RenderPipeline.h"
 #include "Rendering/VkData.h"
+#include "Resources/Font.h"
 #include "Resources/MaterialMesh3D.h"
 #include "Resources/Model.h"
 #include "Resources/Texture.h"
 #include "TaskScheduler.h"
+#include "UI/Canvas.h"
+#include "UI/TextRenderer.h"
+#include "UI/UIInstanceData.h"
+#include "UI/UIMeshData.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_video.h>
@@ -32,6 +34,7 @@
 #include <entt/entity/registry.hpp>
 #include <entt/entt.hpp>
 #include <entt/resource/resource.hpp>
+#include <functional>
 #include <glm/common.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -59,12 +62,14 @@
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
 
-#if MAP_EDITOR
+#if EDITOR
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 #endif
 
 constexpr std::string VULKAN_LOG = "Vulkan";
+
+constexpr VkClearColorValue CLEAR_PASS_COLOR = { { 0.1f, 0.1f, 0.1f, 1.0f } };
 
 uint32_t RenderingSystem::MIN_UNIFORM_ALIGNMENT = 64;
 
@@ -148,8 +153,8 @@ void RenderingSystem::Shutdown()
     vkDestroyDescriptorPool(context.device, context.bindlessPool, nullptr);
     vkDestroyCommandPool(context.device, context.graphicsCommandPool, nullptr);
     vkDestroyCommandPool(context.device, context.transferCommandPool, nullptr);
-    vkDestroyRenderPass(context.device, context.renderPass, nullptr);
-    vkDestroyRenderPass(context.device, context.additivePass, nullptr);
+    vkDestroyRenderPass(context.device, context.worldRenderPass, nullptr);
+    vkDestroyRenderPass(context.device, context.additiveRenderPass, nullptr);
     vkDestroySurfaceKHR(context.instance, context.surface, nullptr);
     vmaDestroyAllocator(context.allocator);
     vkDestroyDevice(context.device, nullptr);
@@ -194,31 +199,222 @@ void RenderingSystem::BeginFrame()
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = 0;
-    beginInfo.pInheritanceInfo = nullptr;
 
     if (vkBeginCommandBuffer(frame.commandBuffer, &beginInfo) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to begin recording command buffer!");
     }
+}
+
+void RenderingSystem::Render3D(Registry* registry, float alpha)
+{
+    const Frame& frame = GetCurrentFrame();
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = context.renderPass;
-    renderPassInfo.framebuffer = swapChainData.swapChainFramebuffers[imageIndex];
+    renderPassInfo.renderPass = context.worldRenderPass;
+    renderPassInfo.framebuffer = swapChainData.geometryFrameBuffers[imageIndex];
 
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = context.swapChainExtent;
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = { { 0.1f, 0.1f, 0.1f, 1.0f } };
+    clearValues[0].color = CLEAR_PASS_COLOR;
     clearValues[1].depthStencil = { 1.0f, 0 };
 
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.clearValueCount = clearValues.size();
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(frame.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    SetViewportFullScreen();
+    vkCmdEndRenderPass(frame.commandBuffer);
+}
+
+#if EDITOR
+void RenderingSystem::RenderUI(Registry* registry, std::function<void()> editorRenderFunc)
+{
+    const Frame& frame = GetCurrentFrame();
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = context.uiRenderPass;
+    renderPassInfo.framebuffer = swapChainData.uiFrameBuffers[imageIndex];
+
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = context.swapChainExtent;
+
+    std::array<VkClearValue, 1> clearValues{};
+    clearValues[0].color = CLEAR_PASS_COLOR;
+
+    renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(frame.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+    SetViewportFullScreen();
+
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    editorRenderFunc();
+    ImGui::Render();
+    ImDrawData* draw_data = ImGui::GetDrawData();
+    ImGui_ImplVulkan_RenderDrawData(draw_data, frame.commandBuffer);
+
+    vkCmdEndRenderPass(frame.commandBuffer);
+}
+#else
+void RenderingSystem::RenderUI(Registry* registry)
+{
+    const Frame& frame = GetCurrentFrame();
+    VkCommandBuffer cmdBuffer = frame.commandBuffer;
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = context.uiRenderPass;
+    renderPassInfo.framebuffer = swapChainData.uiFrameBuffers[imageIndex];
+
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = context.swapChainExtent;
+
+    std::array<VkClearValue, 1> clearValues{};
+    clearValues[0].color = CLEAR_PASS_COLOR;
+
+    renderPassInfo.clearValueCount = clearValues.size();
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(frame.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    SetViewportFullScreen();
+    SetScissorFullScreen();
+
+    entt::registry& reg = registry->Get();
+    TaskScheduler& ts = TaskScheduler::Get();
+
+    // Text rendering
+    auto textPipelineIT = pipelines.find(PipelineType::Text);
+    if (textPipelineIT == pipelines.end())
+    {
+        return;
+    }
+
+    textPipelineIT->second->Bind(cmdBuffer);
+
+    static std::vector<UIInstanceData> textInstances(INITIAL_UI_INSTANCES, UIInstanceData{});
+    static std::vector<int32_t> glyphCounter(INITIAL_UI_INSTANCES);
+
+    auto textView = reg.view<TextRenderer>();
+    auto textStorage = textView.storage();
+    const int32_t textStorageSize = textStorage->size();
+    const entt::entity* entities = textStorage->data();
+
+    auto countGlyphs = [&](int32_t start, int32_t end)
+    {
+        for (int32_t i = start; i < end; ++i)
+        {
+            const TextRenderer& textRenderer = textView->get(entities[i]);
+            glyphCounter[i] = textRenderer.text.size();
+        }
+    };
+    ts.ParallelForSync(textStorageSize, countGlyphs);
+
+    std::vector<uint32_t> offsets(textStorageSize);
+    uint32_t totalGlyphs = 0;
+    for (int32_t i = 0; i < textStorageSize; ++i)
+    {
+        offsets[i] = totalGlyphs;
+        totalGlyphs += glyphCounter[i];
+    }
+
+    auto processText = [&](int32_t start, int32_t end)
+    {
+        for (int32_t i = start; i < end; ++i)
+        {
+            const TextRenderer& textRenderer = textView->get(entities[i]);
+            glm::vec2 cursor = glm::vec2(100.0f, 250.0f);
+
+            const Font& font = textRenderer.font;
+
+            for (int32_t l = 0; l < textRenderer.text.size(); ++l)
+            {
+                const char letter = textRenderer.text[l];
+
+                if (l > 0)
+                {
+                    auto kerningIT = font.mappedKerningPairs.find(std::pair(textRenderer.text[l - 1], letter));
+                    if (kerningIT != font.mappedKerningPairs.end())
+                    {
+                        cursor.x += kerningIT->second;
+                    }
+                }
+
+                auto glyphIT = font.mappedGlyphs.find(letter);
+                if (glyphIT != font.mappedGlyphs.end())
+                {
+                    glm::vec2 pos = {
+                        cursor.x + (glyphIT->second.planeLeft * textRenderer.fontSize),
+                        cursor.y - (glyphIT->second.planeTop * textRenderer.fontSize)
+                    };
+
+                    glm::vec2 size = {
+                        (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
+                        (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
+                    };
+
+                    glm::vec4 uvRect = {
+                        glyphIT->second.uvLeft,
+                        glyphIT->second.uvBottom,
+                        glyphIT->second.uvRight,
+                        glyphIT->second.uvTop
+                    };
+
+                    textInstances[offsets[i] + l] = {
+                        pos,
+                        size,
+                        uvRect,
+                        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
+                        font.textureIndex
+                    };
+
+                    cursor.x += glyphIT->second.advance * textRenderer.fontSize;
+                }
+            }
+        }
+    };
+    ts.ParallelForSync(textStorageSize, processText);
+
+    uint8_t* instanceBuffer = static_cast<uint8_t*>(uiInstanceBuffer.allocationInfo.pMappedData);
+    memcpy(instanceBuffer, textInstances.data(), totalGlyphs * sizeof(UIInstanceData));
+
+    const UIMeshGPUData& uiMesh = registry->GetResource<UIMeshGPUData>();
+
+    VkBuffer vertexBuffers[] = {
+        uiMesh.vertices.buffer,
+        uiInstanceBuffer.buffer,
+    };
+
+    VkDeviceSize vertexOffsets[] = {
+        0,
+        0
+    };
+
+    vkCmdBindVertexBuffers(cmdBuffer, 0, 2, vertexBuffers, vertexOffsets);
+    vkCmdBindIndexBuffer(cmdBuffer, uiMesh.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+    const Canvas& mainCanvas = registry->GetResource<Canvas>();
+    vkCmdPushConstants(cmdBuffer, textPipelineIT->second->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(mainCanvas.projection));
+
+    const float tempPxRange = 3.0f;
+    vkCmdPushConstants(cmdBuffer, textPipelineIT->second->GetLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), sizeof(float), &tempPxRange);
+
+    vkCmdDrawIndexed(cmdBuffer, uiMesh.indicesCount, totalGlyphs, 0, 0, 0);
+
+    vkCmdEndRenderPass(frame.commandBuffer);
+}
+#endif
+
+void RenderingSystem::SetViewportFullScreen()
+{
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = static_cast<float>(context.swapChainExtent.height);
@@ -226,55 +422,26 @@ void RenderingSystem::BeginFrame()
     viewport.height = -static_cast<float>(context.swapChainExtent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
+    vkCmdSetViewport(GetCurrentFrame().commandBuffer, 0, 1, &viewport);
+}
 
+void RenderingSystem::SetScissorFullScreen()
+{
     VkRect2D scissor{};
     scissor.offset = { 0, 0 };
     scissor.extent = context.swapChainExtent;
-    vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
-}
-
-inline bool FrustumIntersects(const Frustum& frustum, const RenderTransform& transform, const Collider& collider)
-{
-    for (int32_t i = 0; i < 6; ++i)
-    {
-        const Plane& plane = frustum.planes[i];
-
-        if (collider.type == ColliderType::AABB)
-        {
-            Float3 pVertex = collider.min;
-            if (plane.normal.x >= 0)
-                pVertex.x = collider.max.x;
-            if (plane.normal.y >= 0)
-                pVertex.y = collider.max.y;
-            if (plane.normal.z >= 0)
-                pVertex.z = collider.max.z;
-
-            if (plane.SignedDistance(pVertex) < 0)
-            {
-                return false;
-            }
-        }
-        else
-        {
-            float distance = glm::dot(plane.normal, static_cast<glm::vec3>(transform.currentPos)) + plane.distance;
-
-            if (FixedT(distance) < -collider.radius)
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
+    vkCmdSetScissor(GetCurrentFrame().commandBuffer, 0, 1, &scissor);
 }
 
 void RenderingSystem::DrawGizmos()
 {
+    // TODO use render pass
+    return;
+
     const Frame& currentFrame = GetCurrentFrame();
     VkCommandBuffer cmdBuffer = currentFrame.commandBuffer;
 
-    auto it = pipelines.find(EPipelineType::Gizmos);
+    auto it = pipelines.find(PipelineType::Gizmos);
     if (it != pipelines.end())
     {
         Gizmos& gizmos = Gizmos::Get();
@@ -308,7 +475,7 @@ void RenderingSystem::Draw(Registry* registry, float alpha)
     const Frame& currentFrame = GetCurrentFrame();
     VkCommandBuffer cmdBuffer = currentFrame.commandBuffer;
 
-    auto it = pipelines.find(EPipelineType::PBR);
+    auto it = pipelines.find(PipelineType::PBR);
     if (it != pipelines.end())
     {
         RenderPipeline* pipeline = it->second;
@@ -389,7 +556,7 @@ void RenderingSystem::Draw(Registry* registry, float alpha)
 
         scheduler.ParallelForSync(storageSize, processFunc);
 
-        auto it = descriptorRegistry.mappedBuffers.find({ InstanceBinding::SET, InstanceBinding::MODELS });
+        auto it = descriptorRegistry.mappedBuffers.find({ InstanceBinding::INDEX, InstanceBinding::MODELS });
         if (it != descriptorRegistry.mappedBuffers.end())
         {
             uint8_t* instanceBuffer = static_cast<uint8_t*>(it->second.allocationInfo.pMappedData);
@@ -399,7 +566,7 @@ void RenderingSystem::Draw(Registry* registry, float alpha)
         // TODO maybe combine these 2?
         // But if I combine them I'll have to create the descriptor in both shader stages...
         // And also the data will become weird...
-        auto matBufferIt = descriptorRegistry.mappedBuffers.find({ InstanceBinding::SET, InstanceBinding::MATERIALS });
+        auto matBufferIt = descriptorRegistry.mappedBuffers.find({ InstanceBinding::INDEX, InstanceBinding::MATERIALS });
         if (matBufferIt != descriptorRegistry.mappedBuffers.end())
         {
             uint8_t* instanceBuffer = static_cast<uint8_t*>(matBufferIt->second.allocationInfo.pMappedData);
@@ -455,8 +622,6 @@ void RenderingSystem::EndFrame()
 {
     const Frame& frame = GetCurrentFrame();
 
-    vkCmdEndRenderPass(frame.commandBuffer);
-
     if (vkEndCommandBuffer(frame.commandBuffer) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to record command buffer!");
@@ -507,7 +672,8 @@ bool RenderingSystem::InitializeVulkan()
     success &= CreateLogicalDevice();
     success &= CreateMemoryAllocator();
     success &= CreateSwapChain();
-    success &= CreateRenderPass();
+    success &= Create3DRenderPass();
+    success &= CreateUIRenderPass();
     success &= CreateFrameBuffers();
     success &= CreateCommandPools();
     success &= CreateDescriptorPool();
@@ -516,9 +682,9 @@ bool RenderingSystem::InitializeVulkan()
         return false;
 
     CreateRenderFrames();
-    CreateDescriptorRegistry();
-    CreateRenderPipelines();
+    CreateDescriptorsAndBuffers();
     SetupDebugMessenger();
+    InitializeRenderPipelines();
 
     return true;
 }
@@ -843,7 +1009,7 @@ bool RenderingSystem::CreateSwapChain()
     return true;
 }
 
-bool RenderingSystem::CreateRenderPass()
+bool RenderingSystem::Create3DRenderPass()
 {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapChainImageFormat;
@@ -917,7 +1083,7 @@ bool RenderingSystem::CreateRenderPass()
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    if (vkCreateRenderPass(context.device, &renderPassInfo, nullptr, &context.renderPass) !=
+    if (vkCreateRenderPass(context.device, &renderPassInfo, nullptr, &context.worldRenderPass) !=
         VK_SUCCESS)
     {
         std::cerr << "Failed to create render pass!" << std::endl;
@@ -944,7 +1110,7 @@ bool RenderingSystem::CreateRenderPass()
     additivePassInfo.subpassCount = 1;
     additivePassInfo.pSubpasses = &additiveSubpass;
 
-    if (vkCreateRenderPass(context.device, &additivePassInfo, nullptr, &context.additivePass) !=
+    if (vkCreateRenderPass(context.device, &additivePassInfo, nullptr, &context.additiveRenderPass) !=
         VK_SUCCESS)
     {
         std::cerr << "Failed to create additive render pass!" << std::endl;
@@ -954,53 +1120,135 @@ bool RenderingSystem::CreateRenderPass()
     return true;
 }
 
+bool RenderingSystem::CreateUIRenderPass()
+{
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.samples = context.msaaSamples;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentDescription colorAttachmentResolve{};
+    colorAttachmentResolve.format = swapChainImageFormat;
+    colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentResolveRef{};
+    colorAttachmentResolveRef.attachment = 1;
+    colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = nullptr;
+    subpass.pResolveAttachments = &colorAttachmentResolveRef;
+
+    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, colorAttachmentResolve };
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
+    if (vkCreateRenderPass(context.device, &renderPassInfo, nullptr, &context.uiRenderPass) !=
+        VK_SUCCESS)
+    {
+        std::cerr << "Failed to create ui render pass!" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool RenderingSystem::CreateFrameBuffers()
 {
-    for (size_t i = 0; i < swapChainData.swapChainFramebuffers.size(); i++)
+    for (size_t i = 0; i < swapChainData.availableImagesCount; i++)
     {
-        std::array<VkImageView, 3> attachments = {
-            swapChainData.colors[i].view, swapChainData.depths[i].view, swapChainData.views[i]
-        };
+        // Geometry
+        std::array<VkImageView, 3> geoAttachments = { swapChainData.colors[i].view, swapChainData.depths[i].view, swapChainData.views[i] };
+        VkFramebufferCreateInfo geoFrameBufferInfo{};
+        geoFrameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        geoFrameBufferInfo.renderPass = context.worldRenderPass;
+        geoFrameBufferInfo.attachmentCount = geoAttachments.size();
+        geoFrameBufferInfo.pAttachments = geoAttachments.data();
+        geoFrameBufferInfo.width = context.swapChainExtent.width;
+        geoFrameBufferInfo.height = context.swapChainExtent.height;
+        geoFrameBufferInfo.layers = 1;
 
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = context.renderPass;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = context.swapChainExtent.width;
-        framebufferInfo.height = context.swapChainExtent.height;
-        framebufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(context.device, &framebufferInfo, nullptr,
-                                &swapChainData.swapChainFramebuffers[i]) != VK_SUCCESS)
+        if (vkCreateFramebuffer(context.device, &geoFrameBufferInfo, nullptr,
+                                &swapChainData.geometryFrameBuffers[i]) != VK_SUCCESS)
         {
-            std::cerr << "Failed to create framebuffer!" << std::endl;
+            LOG(VULKAN_LOG, Error, "Failed to create geometry frame buffer!");
+            return false;
+        }
+
+        // UI
+        std::array<VkImageView, 2> uiAttachments = { swapChainData.colors[i].view, swapChainData.views[i] };
+        VkFramebufferCreateInfo uiFrameBufferInfo{};
+        uiFrameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        uiFrameBufferInfo.renderPass = context.uiRenderPass;
+        uiFrameBufferInfo.attachmentCount = uiAttachments.size();
+        uiFrameBufferInfo.pAttachments = uiAttachments.data();
+        uiFrameBufferInfo.width = context.swapChainExtent.width;
+        uiFrameBufferInfo.height = context.swapChainExtent.height;
+        uiFrameBufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(context.device, &uiFrameBufferInfo, nullptr, &swapChainData.uiFrameBuffers[i]) != VK_SUCCESS)
+        {
+            LOG(VULKAN_LOG, Error, "Failed to create UI frame buffer!");
             return false;
         }
     }
 
-    for (int32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        std::array<VkImageView, 3> attachments = {
-            swapChainData.colors[i].view, swapChainData.depths[i].view, swapChainData.views[i]
-        };
+    // for (int32_t i = 0; i < swapChainData.availableImagesCount; ++i)
+    // {
+    //     std::array<VkImageView, 3> attachments = {
+    //         swapChainData.colors[i].view, swapChainData.depths[i].view, swapChainData.views[i]
+    //     };
 
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = context.additivePass;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = context.swapChainExtent.width;
-        framebufferInfo.height = context.swapChainExtent.height;
-        framebufferInfo.layers = 1;
+    //     VkFramebufferCreateInfo framebufferInfo{};
+    //     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    //     framebufferInfo.renderPass = context.additiveRenderPass;
+    //     framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    //     framebufferInfo.pAttachments = attachments.data();
+    //     framebufferInfo.width = context.swapChainExtent.width;
+    //     framebufferInfo.height = context.swapChainExtent.height;
+    //     framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(context.device, &framebufferInfo, nullptr,
-                                &additiveFrameBuffers[i]) != VK_SUCCESS)
-        {
-            std::cerr << "Failed to create additive framebuffer!" << std::endl;
-            return false;
-        }
-    }
+    //     if (vkCreateFramebuffer(context.device, &framebufferInfo, nullptr,
+    //                             &additiveFrameBuffers[i]) != VK_SUCCESS)
+    //     {
+    //         std::cerr << "Failed to create additive framebuffer!" << std::endl;
+    //         return false;
+    //     }
+    // }
 
     return true;
 }
@@ -1119,7 +1367,7 @@ bool RenderingSystem::CheckDeviceExtensionSupport(VkPhysicalDevice device) const
     return requiredExtensions.empty();
 }
 
-RenderPipeline* RenderingSystem::GetRenderPipeline(EPipelineType type) const
+RenderPipeline* RenderingSystem::GetRenderPipeline(PipelineType type) const
 {
     auto it = pipelines.find(type);
     return it->second;
@@ -1131,15 +1379,6 @@ void RenderingSystem::CreateRenderFrames()
     {
         renderFrames.emplace_back(Frame{ context });
     }
-}
-
-void RenderingSystem::CreateRenderPipelines()
-{
-    PBRPipeline* basePipeline = new PBRPipeline(context);
-    pipelines.emplace(basePipeline->GetType(), basePipeline);
-
-    GizmosPipeline* gizmosPipeline = new GizmosPipeline(context);
-    pipelines.emplace(gizmosPipeline->GetType(), gizmosPipeline);
 }
 
 void RenderingSystem::SetupDebugMessenger()
@@ -1161,38 +1400,18 @@ void RenderingSystem::SetupDebugMessenger()
     createInfo.pUserData = nullptr;
 }
 
+void RenderingSystem::InitializeRenderPipelines()
+{
+    for (const auto& kvp : pipelines)
+    {
+        kvp.second->Initialize();
+    }
+}
+
 void RenderingSystem::CleanupSwapChain()
 {
     vkDeviceWaitIdle(context.device);
-
-    for (int32_t i = 0; i < swapChainData.colors.size(); ++i)
-    {
-        vmaDestroyImage(context.allocator, swapChainData.colors[i].image,
-                        swapChainData.colors[i].memory);
-
-        vkDestroyImageView(context.device, swapChainData.colors[i].view, nullptr);
-
-        vmaDestroyImage(context.allocator, swapChainData.depths[i].image,
-                        swapChainData.depths[i].memory);
-
-        vkDestroyImageView(context.device, swapChainData.depths[i].view, nullptr);
-    }
-
-    for (size_t i = 0; i < swapChainData.swapChainFramebuffers.size(); i++)
-    {
-        vkDestroyFramebuffer(context.device, swapChainData.swapChainFramebuffers[i], nullptr);
-    }
-
-    for (size_t i = 0; i < swapChainData.views.size(); i++)
-    {
-        vkDestroyImageView(context.device, swapChainData.views[i], nullptr);
-    }
-
-    for (size_t i = 0; i < additiveFrameBuffers.size(); ++i)
-    {
-        vkDestroyFramebuffer(context.device, additiveFrameBuffers[i], nullptr);
-    }
-
+    swapChainData.Clear(context.device, context.allocator);
     vkDestroySwapchainKHR(context.device, context.swapChain, nullptr);
 }
 
@@ -1298,12 +1517,13 @@ void RenderingSystem::CreateDepthResources()
     }
 }
 
-void RenderingSystem::CreateDescriptorRegistry()
+void RenderingSystem::CreateDescriptorsAndBuffers()
 {
     CreateUniversalDescriptors();
     CreateInstanceDescriptors();
     CreateTextureDescriptors();
-    CreateGizmosDescriptors();
+    CreateGizmosBuffers();
+    CreateUIInstanceBuffer();
 }
 
 VkImageView RenderingSystem::CreateImageView(VkImage image, VkFormat format,
@@ -1567,6 +1787,15 @@ void RenderingSystem::CreateImage(uint32_t width, uint32_t height, uint32_t laye
     }
 }
 
+AllocatedBuffer RenderingSystem::CreateBuffer(int32_t size, VkBufferUsageFlags bufferFlags, VmaMemoryUsage memoryFlags, VmaAllocationCreateFlags allocationFlags)
+{
+    AllocatedBuffer buffer;
+
+    CreateBuffer(static_cast<VkDeviceSize>(size), bufferFlags, memoryFlags, allocationFlags, buffer.buffer, buffer.memory, &buffer.allocationInfo);
+
+    return buffer;
+}
+
 void RenderingSystem::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags bufferUsage,
                                    VmaMemoryUsage usage, VmaAllocationCreateFlags flags,
                                    VkBuffer& buffer, VmaAllocation& bufferMemory, VmaAllocationInfo* allocationInfo) const
@@ -1606,6 +1835,7 @@ void RenderingSystem::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevic
 MeshGPUData RenderingSystem::CreateMesh(const MeshData& meshData)
 {
     MeshGPUData mesh{};
+    mesh.depth = meshData.depth;
     const VkDeviceSize verticesBufferSize = sizeof(Vertex) * meshData.vertices.size();
     VkDeviceSize indicesBufferSize = sizeof(uint32_t) * meshData.indices.size();
     const VkDeviceSize stagingBufferSize = verticesBufferSize + indicesBufferSize;
@@ -1657,27 +1887,76 @@ MeshGPUData RenderingSystem::CreateMesh(const MeshData& meshData)
     return mesh;
 }
 
+UIMeshGPUData RenderingSystem::CreateMesh(const UIMeshData& meshData)
+{
+    UIMeshGPUData mesh{};
+
+    const VkDeviceSize verticesBufferSize = sizeof(Vertex) * meshData.vertices.size();
+    VkDeviceSize indicesBufferSize = sizeof(uint32_t) * meshData.indices.size();
+    const VkDeviceSize stagingBufferSize = verticesBufferSize + indicesBufferSize;
+
+    VkBuffer stagingBuffer;
+    VmaAllocation staginBufferMemory;
+
+    CreateBuffer(
+        stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, stagingBuffer, staginBufferMemory);
+
+    void* data;
+    vmaMapMemory(context.allocator, staginBufferMemory, &data);
+    memcpy(data, meshData.vertices.data(), static_cast<size_t>(verticesBufferSize));
+    memcpy(reinterpret_cast<char*>(data) + verticesBufferSize, meshData.indices.data(),
+           indicesBufferSize);
+    vmaUnmapMemory(context.allocator, staginBufferMemory);
+
+    VkBuffer vertexBuffer;
+    VkBuffer indexBuffer;
+
+    VmaAllocation vertexMemory;
+    VmaAllocation indexMemory;
+
+    CreateBuffer(
+        verticesBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, vertexBuffer, vertexMemory);
+
+    CreateBuffer(
+        indicesBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_AUTO, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, indexBuffer, indexMemory);
+
+    // Vertex buffer
+    CopyBuffer(stagingBuffer, vertexBuffer, verticesBufferSize, 0, 0);
+
+    // Indices buffer
+    CopyBuffer(stagingBuffer, indexBuffer, indicesBufferSize, verticesBufferSize, 0);
+
+    mesh.vertices.buffer = vertexBuffer;
+    mesh.vertices.memory = vertexMemory;
+    mesh.verticesCount = meshData.vertices.size();
+
+    mesh.indices.buffer = indexBuffer;
+    mesh.indices.memory = indexMemory;
+    mesh.indicesCount = meshData.indices.size();
+
+    vmaDestroyBuffer(context.allocator, stagingBuffer, staginBufferMemory);
+
+    return mesh;
+}
+
 void RenderingSystem::DestroyMesh(const MeshGPUData& mesh)
 {
     DestroyBuffer(mesh.vertices);
     DestroyBuffer(mesh.indices);
 }
 
-#if MAP_EDITOR
+#if EDITOR
 void RenderingSystem::InitImGui()
 {
-
-    // auto func = [](const char* function_name, void* vulkan_instance)
-    // {
-    //     return vkGetInstanceProcAddr(*(reinterpret_cast<VkInstance*>(vulkan_instance)), function_name);
-    // };
-
-    // ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_4, func, &context.instance);
-
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     ImGui::StyleColorsLight();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -1696,7 +1975,7 @@ void RenderingSystem::InitImGui()
     info.MinImageCount = 2;
     info.ImageCount = 2;
     info.Allocator = nullptr;
-    info.PipelineInfoMain.RenderPass = context.renderPass;
+    info.PipelineInfoMain.RenderPass = context.uiRenderPass;
     info.PipelineInfoMain.Subpass = 0;
     info.PipelineInfoMain.MSAASamples = GetMaxUsableSampleCount();
     info.ApiVersion = VK_API_VERSION_1_4;
@@ -1748,7 +2027,7 @@ void RenderingSystem::CreateUniversalDescriptors()
     UpdateDescriptorSet(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, descriptor.set, buffer);
 
     descriptorRegistry.descriptors.emplace(UniversalBinding::INDEX, std::move(descriptor));
-    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(UniversalBinding::SET, UniversalBinding::CAMERA), std::move(buffer));
+    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(UniversalBinding::INDEX, UniversalBinding::CAMERA), std::move(buffer));
 }
 
 void RenderingSystem::CreateInstanceDescriptors()
@@ -1784,13 +2063,13 @@ void RenderingSystem::CreateInstanceDescriptors()
     CreateBuffer(sizeof(glm::mat4) * MAX_FRAMES_IN_FLIGHT * MAX_INSTANCE_BUFFER, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, modelsBuffer.buffer, modelsBuffer.memory, &modelsBuffer.allocationInfo);
     UpdateDescriptorSet(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, descriptor.set, modelsBuffer, InstanceBinding::MODELS);
 
-    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(InstanceBinding::SET, InstanceBinding::MODELS), std::move(modelsBuffer));
+    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(InstanceBinding::INDEX, InstanceBinding::MODELS), std::move(modelsBuffer));
 
     AllocatedBuffer materialsBuffer;
     CreateBuffer(sizeof(MaterialData) * MAX_FRAMES_IN_FLIGHT * MAX_INSTANCE_BUFFER, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, materialsBuffer.buffer, materialsBuffer.memory, &materialsBuffer.allocationInfo);
     UpdateDescriptorSet(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, descriptor.set, materialsBuffer, InstanceBinding::MATERIALS);
 
-    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(InstanceBinding::SET, InstanceBinding::MATERIALS), std::move(materialsBuffer));
+    descriptorRegistry.mappedBuffers.emplace(std::make_tuple(InstanceBinding::INDEX, InstanceBinding::MATERIALS), std::move(materialsBuffer));
 }
 
 void RenderingSystem::CreateTextureDescriptors()
@@ -1834,12 +2113,17 @@ void RenderingSystem::CreateTextureDescriptors()
     descriptorRegistry.descriptors.emplace(TextureBinding::INDEX, std::move(descriptor));
 }
 
-void RenderingSystem::CreateGizmosDescriptors()
+void RenderingSystem::CreateGizmosBuffers()
 {
     constexpr int32_t INITIAL_GIZMOS_VERTS = 100000;
     currentGizmosCapacity = INITIAL_GIZMOS_VERTS;
 
     CreateBuffer(sizeof(GizmosVertex) * MAX_FRAMES_IN_FLIGHT * INITIAL_GIZMOS_VERTS, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, gizmosBuffer.buffer, gizmosBuffer.memory, &gizmosBuffer.allocationInfo);
+}
+
+void RenderingSystem::CreateUIInstanceBuffer()
+{
+    CreateBuffer(sizeof(UIInstanceData) * MAX_FRAMES_IN_FLIGHT * INITIAL_UI_INSTANCES, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, uiInstanceBuffer.buffer, uiInstanceBuffer.memory, &uiInstanceBuffer.allocationInfo);
 }
 
 void RenderingSystem::UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set,
@@ -1898,15 +2182,14 @@ void RenderingSystem::ReturnTextureIndex(uint32_t index)
     cachedTextureIndices.push(index);
 }
 
-void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
+void RenderingSystem::CreateTexture(const TextureData& textureData, uint8_t* pixels, AllocatedTexture& renderTexture, uint32_t& textureIndex)
 {
     VkBuffer stagingBuffer;
     VmaAllocation stagingMemory;
-    const int32_t channels = texture->data.channels;
 
     // TODO usually textures have 1byte channels, but still need to make sure here
-    const VkDeviceSize textureSize = static_cast<VkDeviceSize>(texture->data.width) *
-                                     static_cast<VkDeviceSize>(texture->data.height) * channels;
+    const VkDeviceSize textureSize = static_cast<VkDeviceSize>(textureData.width) *
+                                     static_cast<VkDeviceSize>(textureData.height) * textureData.channels;
 
     CreateBuffer(textureSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
                  VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, stagingBuffer,
@@ -1923,9 +2206,8 @@ void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
 
     VkImage imageBuffer;
     VmaAllocation imageMemory;
-
-    CreateImage(texture->data.width, texture->data.height, 1, 1, VK_SAMPLE_COUNT_1_BIT,
-                VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
+    CreateImage(textureData.width, textureData.height, 1, 1, VK_SAMPLE_COUNT_1_BIT,
+                static_cast<VkFormat>(textureData.format), VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                     VK_IMAGE_USAGE_SAMPLED_BIT,
                 VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, imageBuffer, imageMemory);
@@ -1937,7 +2219,7 @@ void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 0, 1);
 
     CopyBufferToImage(commandBuffer.commandBuffer, stagingBuffer, imageBuffer, 0, 0,
-                      texture->data.width, texture->data.height, 0, 1);
+                      textureData.width, textureData.height, 0, 1);
 
     EndSingleTimeCommands(commandBuffer);
 
@@ -1951,8 +2233,8 @@ void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 0, 1);
     EndSingleTimeCommands(commandBuffer);
 
-    texture->renderTexture.image = imageBuffer;
-    texture->renderTexture.memory = imageMemory;
+    renderTexture.image = imageBuffer;
+    renderTexture.memory = imageMemory;
 
     vmaDestroyBuffer(context.allocator, stagingBuffer, stagingMemory);
 
@@ -1960,22 +2242,22 @@ void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
     imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     imageViewInfo.image = imageBuffer;
     imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    imageViewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imageViewInfo.format = static_cast<VkFormat>(textureData.format);
     imageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     imageViewInfo.subresourceRange.baseMipLevel = 0;
     imageViewInfo.subresourceRange.levelCount = 1;
     imageViewInfo.subresourceRange.baseArrayLayer = 0;
     imageViewInfo.subresourceRange.layerCount = 1;
 
-    if (vkCreateImageView(context.device, &imageViewInfo, nullptr, &texture->renderTexture.view) != VK_SUCCESS)
+    if (vkCreateImageView(context.device, &imageViewInfo, nullptr, &renderTexture.view) != VK_SUCCESS)
     {
         std::cerr << "Failed to create image view!" << std::endl;
     }
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_NEAREST;
-    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.magFilter = static_cast<VkFilter>(textureData.filter);
+    samplerInfo.minFilter = static_cast<VkFilter>(textureData.filter);
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -1994,7 +2276,7 @@ void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;
 
-    if (vkCreateSampler(context.device, &samplerInfo, nullptr, &texture->renderTexture.sampler) != VK_SUCCESS)
+    if (vkCreateSampler(context.device, &samplerInfo, nullptr, &renderTexture.sampler) != VK_SUCCESS)
     {
         std::cerr << "Failed tocreate image sampler!" << std::endl;
     }
@@ -2003,31 +2285,23 @@ void RenderingSystem::CreateSRGBATexture(Texture2D* texture, void* pixels)
 
     if (texturesIt != descriptorRegistry.descriptors.end())
     {
-        texture->textureIndex = GetOrCreateTextureIndex();
+        textureIndex = GetOrCreateTextureIndex();
         VkWriteDescriptorSet write{};
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = texture->renderTexture.view;
-        imageInfo.sampler = texture->renderTexture.sampler;
+        imageInfo.imageView = renderTexture.view;
+        imageInfo.sampler = renderTexture.sampler;
 
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = texturesIt->second.set;
         write.dstBinding = 0;
-        write.dstArrayElement = texture->textureIndex;
+        write.dstArrayElement = textureIndex;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
         write.pImageInfo = &imageInfo;
 
         vkUpdateDescriptorSets(context.device, 1, &write, 0, nullptr);
     }
-
-    // TODO this needs to live in a custom texture instead of the base texture
-    // if (keepStagingBuffer)
-    // {
-    //     outTexture.stagingBuffer = new AllocatedBuffer{};
-    //     outTexture.stagingBuffer->buffer = stagingBuffer;
-    //     outTexture.stagingBuffer->memory = stagingMemory;
-    // }
 }
 
 SingleTimeCommandBuffer RenderingSystem::BeginSingleTimeCommands(VkCommandPool commandPool,

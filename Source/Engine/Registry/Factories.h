@@ -2,6 +2,7 @@
 
 #include "Debug/DebugSystem.h"
 #include <cstdint>
+#include <entt/core/fwd.hpp>
 #include <entt/entt.hpp>
 #include <type_traits>
 
@@ -27,7 +28,7 @@ class Factories
 
   private:
     using EmplaceFn = void (*)(entt::registry&, entt::entity, const uint8_t*);
-    static std::unordered_map<uint32_t, EmplaceFn> componentFactory;
+    static std::unordered_map<entt::id_type, EmplaceFn> componentFactory;
 
     template <typename T>
     void RegisterComponentType()

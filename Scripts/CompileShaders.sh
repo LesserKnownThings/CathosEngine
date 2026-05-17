@@ -18,15 +18,19 @@ for dir in "$SOURCE_DIR"/*/; do
     echo "Compiling $shader_name"
 
     # Compile vertex shader
-    if ! glslc "$dir/shader.vert" -o "$out_dir/vert.spv"; then
-        echo "Failed to compile vertex shader for $shader_name"
-        exit 1
+    if [ -f "$dir/shader.vert" ]; then
+        if ! glslc "$dir/shader.vert" -o "$out_dir/vert.spv"; then
+            echo "Failed to compile vertex shader for $shader_name"
+            exit 1
+        fi
     fi
 
     # Compile fragment shader
-    if ! glslc "$dir/shader.frag" -o "$out_dir/frag.spv"; then
-        echo "Failed to compile fragment shader for $shader_name"
-        exit 1
+    if [ -f "$dir/shader.frag" ]; then
+        if ! glslc "$dir/shader.frag" -o "$out_dir/frag.spv"; then
+            echo "Failed to compile fragment shader for $shader_name"
+            exit 1
+        fi
     fi
 done
 

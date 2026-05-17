@@ -9,10 +9,12 @@
 
 struct VkContext;
 
-enum class EPipelineType : uint8_t
+enum class PipelineType : uint8_t
 {
     PBR,
-    Gizmos
+    Gizmos,
+    Text,
+    UI,
 };
 
 struct DescriptorBindingInfo
@@ -42,10 +44,10 @@ class RenderPipeline
 {
   public:
     virtual ~RenderPipeline() = default;
-    RenderPipeline(const VkContext& inContext);
-    virtual void Destroy();
+    virtual void Initialize() = 0;
 
-    virtual EPipelineType GetType() const = 0;
+    RenderPipeline(const VkContext& inContext) : context(inContext) {}
+    virtual void Destroy();
 
     virtual void Bind(VkCommandBuffer buffer);
     VkPipelineLayout GetLayout() const

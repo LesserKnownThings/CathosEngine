@@ -8,15 +8,14 @@
 #include <SDL3/SDL_timer.h>
 #include <cstdint>
 
-#if MAP_EDITOR
-#include "MapWorld.h"
+#if EDITOR
+#include "EditorWorld.h"
 #endif
 
 // TODO read from config what's the target FPS for the engine
-constexpr int32_t TARGET_FPS = 30;
-
-constexpr int32_t SIM_STEP = 1000000000 / TARGET_FPS;
-constexpr int32_t NET_STEP = 100000000; // 100 ms
+constexpr uint64_t TARGET_FPS = 30;
+constexpr uint64_t SIM_STEP = 1000000000ull / TARGET_FPS;
+constexpr uint64_t NET_DIVISOR = 3; // For 10 hz
 
 constexpr uint32_t SPIRAL_CHECK = 250000000; // 250ms
 
@@ -38,8 +37,8 @@ Engine::Engine()
     instance = this;
 }
 
-#if MAP_EDITOR
-static MapWorld mapWorld{};
+#if EDITOR
+static EditorWorld editorWorld{};
 #endif
 
 bool Engine::Initialize(int argc, const char* argv[])
@@ -49,11 +48,11 @@ bool Engine::Initialize(int argc, const char* argv[])
     isRunning &= SDLLayer::Init();
     isRunning &= RenderingSystem::Get().Initialize();
 
-#if !MAP_EDITOR
+#if !EDITOR
     defaultWorld = new World();
     isRunning &= defaultWorld->Initialize(argc, argv);
 #else
-    mapWorld.Init();
+    editorWorld.Init();
 #endif
 
     InputManager::Get().onCloseGame = CallMe::Delegate<void()>(new auto([this]()
@@ -80,25 +79,24 @@ bool Engine::Initialize(int argc, const char* argv[])
         accumulator += frameTime;
         netAccumulator += frameTime;
 
-#if !MAP_EDITOR
+#if !EDITOR
         defaultWorld->Run();
 
         while (accumulator >= SIM_STEP)
         {
-            defaultWorld->RunSim(tick++);
-            accumulator -= SIM_STEP;
-        }
+            defaultWorld->RunSim(tick);
 
-        while (netAccumulator >= NET_STEP)
-        {
-            defaultWorld->NetPulse();
-            netAccumulator -= NET_STEP;
+            if (tick % NET_DIVISOR == 0)
+            {
+                defaultWorld->NetPulse();
+            }
+
+            tick++;
+            accumulator -= SIM_STEP;
         }
 
         float alpha = static_cast<float>(accumulator) / static_cast<float>(SIM_STEP);
         defaultWorld->Render(alpha);
-
-        defaultWorld->EndFrameCommandBuffer();
 
         gcDelay += deltaTime;
         if (gcDelay >= GC_DELAY)
@@ -107,9 +105,9 @@ bool Engine::Initialize(int argc, const char* argv[])
             gcDelay = 0.0f;
         }
 #else
-        mapWorld.Run();
-        mapWorld.Render();
-        mapWorld.EndFrameCommandBuffer();
+        editorWorld.Run();
+        editorWorld.Render();
+        editorWorld.EndFrameCommandBuffer();
 #endif
     }
 
@@ -120,7 +118,7 @@ void Engine::Shutdown()
 {
     SDLLayer::Shutdown();
 
-#if !MAP_EDITOR
+#if !EDITOR
     defaultWorld->Shutdown();
     delete defaultWorld;
     defaultWorld = nullptr;

@@ -7,7 +7,7 @@
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 
-#if MAP_EDITOR
+#if EDITOR
 #include <backends/imgui_impl_sdl3.h>
 #endif
 
@@ -41,7 +41,7 @@ void InputManager::PollInput()
 
     while (SDL_PollEvent(&e))
     {
-#if MAP_EDITOR
+#if EDITOR
         ImGui_ImplSDL3_ProcessEvent(&e);
 #endif
 

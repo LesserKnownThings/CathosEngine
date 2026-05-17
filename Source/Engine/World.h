@@ -22,16 +22,12 @@ class World
     void RunSim(uint32_t tick);
     void Render(float alpha);
 
-    void EndFrameCommandBuffer();
-
     void GCPass();
 
   private:
     World() = default;
 
     Registry* registry = nullptr;
-    CommandBuffer globalCmd{};
-
     Player* player = nullptr;
 
     uint32_t simTick = 0;

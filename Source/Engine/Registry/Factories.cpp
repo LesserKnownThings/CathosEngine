@@ -6,7 +6,11 @@
 #include "Game/Camera.h"
 #include "Resources/MaterialMesh3D.h"
 #include "Resources/Model.h"
+#include "UI/LayoutBox.h"
+#include "UI/NineSlice.h"
 #include "UI/TextRenderer.h"
+#include "UI/UIMaterial.h"
+#include "UI/UITransform.h"
 
 std::unordered_map<uint32_t, Factories::EmplaceFn> Factories::componentFactory;
 
@@ -31,7 +35,25 @@ Factories::Factories()
     // Physics
     RegisterComponentType<Collider>();
 
+    // AI
     RegisterComponentType<PathRequest>();
 
+    // UI
     RegisterComponentType<TextRenderer>();
+    RegisterComponentType<TextStyle>();
+
+    RegisterComponentType<UITransform>();
+    RegisterComponentType<UIRenderTransform>();
+    RegisterComponentType<UIRenderOrder>();
+    RegisterComponentType<UIAnchor>();
+    RegisterComponentType<UIPivot>();
+    RegisterComponentType<ChildOf>();
+    RegisterComponentType<Children>();
+
+    RegisterComponentType<UIMaterial>();
+    RegisterComponentType<NineSlice>();
+
+    RegisterComponentType<HBox>();
+    RegisterComponentType<VBox>();
+    RegisterComponentType<GridBox>();
 }

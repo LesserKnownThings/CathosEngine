@@ -1,16 +1,11 @@
 #pragma once
 
+#include "Systems/ISystem.h"
 #include <cstdint>
 
-class CommandBuffer;
-class Registry;
-
-class NavigationSystem
+class NavigationSystem : ISystem
 {
-  public:
-    NavigationSystem();
-
   private:
-    void Init(Registry* registry, CommandBuffer& cmd);
-    void RunSync(Registry* registry, CommandBuffer& cmd, uint32_t tick);
+    void Init(Registry* registry, CommandBuffer& cmd) override;
+    void RunSync(Registry* registry, CommandBuffer& cmd, uint32_t tick) override;
 };

@@ -17,11 +17,7 @@ void SystemRegistry::Init(Registry* registry, CommandBuffer& cmd)
 
     for (auto& info : sortedSystems)
     {
-        if (info.creator)
-        {
-            info.creator();
-            info.initFunc(registry, cmd);
-        }
+        info.system->Init(registry, cmd);
     }
 }
 
@@ -77,7 +73,7 @@ void SystemRegistry::Bake()
         {
             if (info.id == current)
             {
-                sortedSystems.emplace_back(info.id, info.phase, SystemFunc(), SyncSystemFunc(), InitFunc(), info.creator);
+                sortedSystems.emplace_back(info.id, info.phase, info.creator());
                 break;
             }
         }
@@ -99,7 +95,7 @@ void SystemRegistry::Run(Registry* registry, CommandBuffer& cmd, SystemPhase pha
     {
         if (sys.phase == phase)
         {
-            sys.func(registry, cmd);
+            sys.system->Run(registry, cmd);
         }
     }
 }
@@ -110,7 +106,12 @@ void SystemRegistry::RunSync(Registry* registry, CommandBuffer& cmd, uint32_t ti
     {
         if (sys.phase == phase)
         {
-            sys.syncFunc(registry, cmd, tick);
+            sys.system->RunSync(registry, cmd, tick);
         }
     }
+}
+
+void SystemRegistry::Add(const SystemInfo& info)
+{
+    infos.push_back(info);
 }

@@ -55,8 +55,9 @@ bool Engine::Initialize(int argc, const char* argv[])
     editorWorld.Init();
 #endif
 
-    InputManager::Get().onCloseGame = CallMe::Delegate<void()>(new auto([this]()
-                                                                        { isRunning = false; }));
+    InputManager& im = InputManager::Get();
+    im.onCloseGame = CallMe::Delegate<void()>(new auto([this]()
+                                                       { isRunning = false; }));
 
     uint64_t lastTime = SDL_GetTicksNS();
     uint64_t accumulator = 0;
@@ -78,6 +79,8 @@ bool Engine::Initialize(int argc, const char* argv[])
 
         accumulator += frameTime;
         netAccumulator += frameTime;
+
+        im.PollInput();
 
 #if !EDITOR
         defaultWorld->Run();
@@ -109,6 +112,8 @@ bool Engine::Initialize(int argc, const char* argv[])
         editorWorld.Render();
         editorWorld.EndFrameCommandBuffer();
 #endif
+
+        im.FlushInput();
     }
 
     return true;

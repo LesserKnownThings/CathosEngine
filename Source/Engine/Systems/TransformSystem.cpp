@@ -9,13 +9,6 @@
 
 REGISTER_SYSTEM(TransformSystem, SystemPhase::Simulation, DEPENDENCIES({}), DEPENDENCIES({}), 1);
 
-TransformSystem::TransformSystem()
-{
-    SystemRegistry& registry = SystemRegistry::Get();
-    registry.BindFunc<TransformSystem, &TransformSystem::Run>(this);
-    registry.BindSyncFunc<TransformSystem, &TransformSystem::RunSync>(this);
-}
-
 void TransformSystem::Run(Registry* registry, CommandBuffer& cmd)
 {
     TransformToRenderTransform(registry);
@@ -30,40 +23,35 @@ void TransformSystem::UpdateTransformHierarchy(Registry* registry)
 {
     entt::registry& reg = registry->Get();
 
-    auto group = reg.group<LocalTransform, GlobalTransform, Hierarchy>();
-    const entt::entity* storage = reg.storage<LocalTransform>().data();
+    auto view = reg.view<LocalTransform, Hierarchy, GlobalTransform>();
+    auto entities = std::vector<entt::entity>(view.begin(), view.end());
 
-    auto func = [&group, &storage](int32_t start, int32_t end)
+    auto func = [&view, &entities](int32_t start, int32_t end)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            const auto entity = storage[i];
-
-            LocalTransform& local = group.get<LocalTransform>(entity);
+            auto [local, hierarchy, global] = view.get<LocalTransform, Hierarchy, const GlobalTransform>(entities[i]);
 
             if (local.dirty == 0)
             {
                 return;
             }
 
-            Hierarchy& h = group.get<Hierarchy>(entity);
-            GlobalTransform& global = group.get<GlobalTransform>(entity);
-
             local.dirty = 0;
 
-            if (h.parent == entt::null)
+            if (hierarchy.parent == entt::null)
             {
                 global.matrix = local.LocalMatrix();
             }
             else
             {
-                GlobalTransform& parentGlobal = group.get<GlobalTransform>(h.parent);
+                GlobalTransform& parentGlobal = view.get<GlobalTransform>(hierarchy.parent);
                 global.matrix = parentGlobal.matrix * local.LocalMatrix();
             }
         }
     };
 
-    TaskScheduler::Get().ParallelForSync(group.size(), func);
+    TaskScheduler::Get().ParallelForSync(entities.size(), func);
 }
 
 void TransformSystem::TransformToRenderTransform(Registry* registry)
@@ -71,17 +59,13 @@ void TransformSystem::TransformToRenderTransform(Registry* registry)
     entt::registry& reg = registry->Get();
 
     auto view = reg.view<RenderTransform, GlobalTransform>();
-    auto& storage = reg.storage<RenderTransform>();
-
-    const entt::entity* entities = storage.data();
-    const int32_t size = storage.size();
+    const auto entities = std::vector<entt::entity>(view.begin(), view.end());
 
     auto func = [&view, &entities](int32_t start, int32_t end)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            const GlobalTransform& global = view.get<GlobalTransform>(entities[i]);
-            RenderTransform& render = view.get<RenderTransform>(entities[i]);
+            auto [render, global] = view.get<RenderTransform, const GlobalTransform>(entities[i]);
 
             render.prevPos = render.currentPos;
             render.prevRot = render.currentRot;
@@ -91,5 +75,5 @@ void TransformSystem::TransformToRenderTransform(Registry* registry)
         }
     };
 
-    TaskScheduler::Get().ParallelForSync(size, func);
+    TaskScheduler::Get().ParallelForSync(entities.size(), func);
 }

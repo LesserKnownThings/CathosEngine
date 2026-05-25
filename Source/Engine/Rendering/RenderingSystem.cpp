@@ -17,9 +17,12 @@
 #include "Resources/Texture.h"
 #include "TaskScheduler.h"
 #include "UI/Canvas.h"
+#include "UI/NineSlice.h"
 #include "UI/TextRenderer.h"
 #include "UI/UIInstanceData.h"
+#include "UI/UIMaterial.h"
 #include "UI/UIMeshData.h"
+#include "UI/UITransform.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_video.h>
@@ -66,6 +69,8 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 #endif
+
+#include <format>
 
 constexpr std::string VULKAN_LOG = "Vulkan";
 
@@ -263,7 +268,9 @@ void RenderingSystem::RenderUI(Registry* registry, std::function<void()> editorR
 
     vkCmdEndRenderPass(frame.commandBuffer);
 }
+2
 #else
+// TODO instance and batching properly
 void RenderingSystem::RenderUI(Registry* registry)
 {
     const Frame& frame = GetCurrentFrame();
@@ -291,28 +298,240 @@ void RenderingSystem::RenderUI(Registry* registry)
     entt::registry& reg = registry->Get();
     TaskScheduler& ts = TaskScheduler::Get();
 
-    // Text rendering
-    auto textPipelineIT = pipelines.find(PipelineType::Text);
-    if (textPipelineIT == pipelines.end())
+    const UIMeshGPUData& uiMesh = registry->GetResource<UIMeshGPUData>();
+    const Canvas& mainCanvas = registry->GetResource<Canvas>();
+
+    VkBuffer vertexBuffers[] = {
+        uiMesh.vertices.buffer,
+        uiInstanceBuffer.buffer,
+    };
+
+    VkDeviceSize vertexOffsets[] = {
+        0,
+        0
+    };
+
+    uint8_t* instanceBuffer = static_cast<uint8_t*>(uiInstanceBuffer.allocationInfo.pMappedData);
+
+    struct UIRenderItem
     {
-        return;
+        uint64_t sortKey;
+
+        uint32_t instanceStart;
+        uint32_t instanceCount;
+
+        float pxRange;
+
+        PipelineType pipeline;
+
+        bool operator<(const UIRenderItem& other) const
+        {
+            return sortKey < other.sortKey;
+        }
+    };
+
+    struct UIBatch
+    {
+        uint32_t instanceStart;
+        uint32_t instanceCount;
+
+        PipelineType pipeline;
+        float pxRange;
+    };
+
+    auto sortKey = [](int32_t zOrder, PipelineType pipeline) -> uint64_t
+    {
+        return (static_cast<uint64_t>(zOrder) << 48) |
+               (static_cast<uint64_t>(pipeline) << 40);
+    };
+
+    static std::vector<UIRenderItem> renderItems(INITIAL_UI_INSTANCES);
+    static std::vector<UIInstanceData> gInstances(INITIAL_UI_INSTANCES);
+
+    // TODO switch to groups instead of view?
+    auto imageView = reg.view<const UIMaterial, const UITransform, const UIRenderTransform, const UIRenderOrder>(entt::exclude<TextRenderer, NineSlice>);
+    const auto imageEntities = std::vector<entt::entity>(imageView.begin(), imageView.end());
+
+    auto sliceView = reg.view<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform, const UIRenderOrder>(entt::exclude<TextRenderer>);
+    const auto sliceEntities = std::vector<entt::entity>(sliceView.begin(), sliceView.end());
+
+    auto textView = reg.view<const TextRenderer, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>();
+    const auto textEntities = std::vector<entt::entity>(textView.begin(), textView.end());
+
+    const int32_t imageStorageSize = imageEntities.size();
+    const int32_t sliceStorageSize = sliceEntities.size();
+    const int32_t textStorageSize = textEntities.size();
+
+    const int32_t totalRenderItems = imageStorageSize + sliceStorageSize + textStorageSize;
+    if (totalRenderItems > renderItems.size())
+    {
+        renderItems.resize(totalRenderItems * 2);
     }
 
-    textPipelineIT->second->Bind(cmdBuffer);
+    // I can at least make sure the images and 9 slices have enough memory
+    gInstances.resize(imageStorageSize + sliceStorageSize * 9);
 
-    static std::vector<UIInstanceData> textInstances(INITIAL_UI_INSTANCES, UIInstanceData{});
+    int32_t renderItemsOffset = 0;
+
+    auto processImage = [&imageView, &imageEntities, &sortKey](int32_t start, int32_t end)
+    {
+        for (int32_t i = start; i < end; ++i)
+        {
+            auto [material, uiTransform, worldTransform, renderOrder] = imageView.get<const UIMaterial, const UITransform, const UIRenderTransform, const UIRenderOrder>(imageEntities[i]);
+
+            gInstances[i] = UIInstanceData{
+                worldTransform.position,
+                worldTransform.size,
+                material.uv,
+                material.color,
+                material.textureHandle->textureIndex
+            };
+
+            renderItems[i] = UIRenderItem{
+                sortKey(renderOrder.renderOrder, material.pipeline),
+                static_cast<uint32_t>(i),
+                1,
+                0.0f,
+                PipelineType::UI,
+            };
+        }
+    };
+    ts.ParallelForSync(imageStorageSize, processImage);
+    renderItemsOffset += imageStorageSize;
+
+    // Nine slice
+    // TODO I read some articles about 9 slice where I could either:
+    // 1. Draw more vertices instead of instancing the same quad
+    // 2. Perform the 9 slice on the fragment shader
+    // I'll have to implement one of those because they're a lot more efficient
+    auto processNineSlice = [&sliceView, &sliceEntities, &renderItemsOffset, &imageStorageSize, &sortKey](int32_t start, int32_t end)
+    {
+        for (int32_t i = start; i < end; ++i)
+        {
+            auto [material, slice, uiTransform, worldTransform, renderOrder] = sliceView.get<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform, const UIRenderOrder>(sliceEntities[i]);
+
+            const float imgW = material.textureHandle->data.width;
+            const float imgH = material.textureHandle->data.height;
+
+            const float dstX = worldTransform.position.x;
+            const float dstY = worldTransform.position.y;
+            const float dstW = worldTransform.size.x;
+            const float dstH = worldTransform.size.y;
+
+            // Proportional downscaling for borders
+            // Since slices can become bigger than the borders I need to make sure it doesn't go negative
+            float left = slice.left;
+            float right = slice.right;
+            const float totalBorderW = left + right;
+            if (dstW < totalBorderW && totalBorderW > 0.0f)
+            {
+                const float scaleX = dstW / totalBorderW;
+                left *= scaleX;
+                right *= scaleX;
+            }
+
+            float top = slice.top;
+            float bottom = slice.bottom;
+            const float totalBorderH = top + bottom;
+            if (dstH < totalBorderH && totalBorderH > 0.0f)
+            {
+                const float scaleY = dstH / totalBorderH;
+                top *= scaleY;
+                bottom *= scaleY;
+            }
+            // -------------------------------------------------
+
+            const float colX[4] = {
+                dstX,
+                dstX + left,
+                dstX + dstW - right,
+                dstX + dstW
+            };
+
+            const float rowY[4] = {
+                dstY,
+                dstY + top,
+                dstY + dstH - bottom,
+                dstY + dstH
+            };
+
+            const float colU[4] = {
+                0.0f,
+                slice.left / imgW,
+                (imgW - slice.right) / imgW,
+                1.0f
+            };
+
+            const float rowV[4] = {
+                0.0f,
+                slice.top / imgH,
+                1.0f - (slice.bottom / imgH),
+                1.0f
+            };
+
+            const int32_t baseIndex = renderItemsOffset + (i * 9);
+            int32_t index = 0;
+            for (int row = 0; row < 3; ++row)
+            {
+                for (int col = 0; col < 3; ++col)
+                {
+                    glm::vec2 pos = { colX[col], rowY[row] };
+                    glm::vec2 size = { colX[col + 1] - colX[col],
+                                       rowY[row + 1] - rowY[row] };
+
+                    glm::vec4 uvRect = {
+                        colU[col],
+                        rowV[row + 1],
+                        colU[col + 1],
+                        rowV[row]
+                    };
+
+                    gInstances[baseIndex + index] = UIInstanceData{
+                        pos,
+                        size,
+                        uvRect,
+                        material.color,
+                        material.textureHandle->textureIndex
+                    };
+                    ++index;
+                }
+            }
+
+            renderItems[imageStorageSize + i] = UIRenderItem{
+                sortKey(renderOrder.renderOrder, material.pipeline),
+                static_cast<uint32_t>(baseIndex),
+                9,
+                0.0f,
+                PipelineType::UI,
+            };
+        }
+    };
+    ts.ParallelForSync(sliceEntities.size(), processNineSlice);
+
+    renderItemsOffset += sliceStorageSize * 9;
+
+    // Text
+    struct TextInstance
+    {
+        Font* fontHandle;
+        entt::entity entity;
+
+        bool operator<(const TextInstance& other) const
+        {
+            return fontHandle < other.fontHandle;
+        }
+    };
+
+    static std::vector<TextInstance> textInstances(INITIAL_UI_INSTANCES);
     static std::vector<int32_t> glyphCounter(INITIAL_UI_INSTANCES);
 
-    auto textView = reg.view<TextRenderer>();
-    auto textStorage = textView.storage();
-    const int32_t textStorageSize = textStorage->size();
-    const entt::entity* entities = textStorage->data();
+    glyphCounter.resize(textStorageSize);
 
     auto countGlyphs = [&](int32_t start, int32_t end)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            const TextRenderer& textRenderer = textView->get(entities[i]);
+            const TextRenderer& textRenderer = textView.get<TextRenderer>(textEntities[i]);
             glyphCounter[i] = textRenderer.text.size();
         }
     };
@@ -326,18 +545,35 @@ void RenderingSystem::RenderUI(Registry* registry)
         totalGlyphs += glyphCounter[i];
     }
 
-    auto processText = [&](int32_t start, int32_t end)
+    textInstances.resize(totalGlyphs);
+    gInstances.resize(renderItemsOffset + totalGlyphs);
+
+    auto processText = [&textView, &textEntities, &offsets, &imageStorageSize, &sliceStorageSize, &renderItemsOffset, &sortKey](int32_t start, int32_t end)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            const TextRenderer& textRenderer = textView->get(entities[i]);
-            glm::vec2 cursor = glm::vec2(100.0f, 250.0f);
+            auto [textRenderer, textStyle, uiTransform, worldTransform, renderOrder] = textView.get<const TextRenderer, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>(textEntities[i]);
+
+            glm::vec2 cursor = worldTransform.position;
+            float lineHeight = textRenderer.fontSize * 1.5f;
 
             const Font& font = textRenderer.font;
 
             for (int32_t l = 0; l < textRenderer.text.size(); ++l)
             {
                 const char letter = textRenderer.text[l];
+
+                auto glyphIT = font.mappedGlyphs.find(letter);
+                if (glyphIT == font.mappedGlyphs.end())
+                    continue;
+
+                const float advance = glyphIT->second.advance * textRenderer.fontSize;
+
+                if (textStyle.wrapText && cursor.x + advance > worldTransform.position.x + worldTransform.size.x)
+                {
+                    cursor.x = worldTransform.position.x;
+                    cursor.y += lineHeight;
+                }
 
                 if (l > 0)
                 {
@@ -348,72 +584,151 @@ void RenderingSystem::RenderUI(Registry* registry)
                     }
                 }
 
-                auto glyphIT = font.mappedGlyphs.find(letter);
-                if (glyphIT != font.mappedGlyphs.end())
-                {
-                    glm::vec2 pos = {
-                        cursor.x + (glyphIT->second.planeLeft * textRenderer.fontSize),
-                        cursor.y - (glyphIT->second.planeTop * textRenderer.fontSize)
-                    };
+                glm::vec2 pos = {
+                    cursor.x + (glyphIT->second.planeLeft * textRenderer.fontSize),
+                    cursor.y - (glyphIT->second.planeTop * textRenderer.fontSize)
+                };
 
-                    glm::vec2 size = {
-                        (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
-                        (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
-                    };
+                glm::vec2 size = {
+                    (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
+                    (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
+                };
 
-                    glm::vec4 uvRect = {
-                        glyphIT->second.uvLeft,
-                        glyphIT->second.uvBottom,
-                        glyphIT->second.uvRight,
-                        glyphIT->second.uvTop
-                    };
+                glm::vec4 uvRect = {
+                    glyphIT->second.uvLeft,
+                    glyphIT->second.uvBottom,
+                    glyphIT->second.uvRight,
+                    glyphIT->second.uvTop
+                };
 
-                    textInstances[offsets[i] + l] = {
-                        pos,
-                        size,
-                        uvRect,
-                        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
-                        font.textureIndex
-                    };
+                gInstances[renderItemsOffset + offsets[i] + l] = UIInstanceData{
+                    pos,
+                    size,
+                    uvRect,
+                    textRenderer.color,
+                    font.textureIndex
+                };
 
-                    cursor.x += glyphIT->second.advance * textRenderer.fontSize;
-                }
+                textInstances[offsets[i] + l] = TextInstance{
+                    textRenderer.font.handle().get(),
+                    textEntities[i],
+                };
+
+                cursor.x += advance;
             }
+
+            const int32_t instanceStart = renderItemsOffset + offsets[i];
+            renderItems[imageStorageSize + sliceStorageSize + offsets[i]] = UIRenderItem{
+                sortKey(renderOrder.renderOrder, PipelineType::Text),
+                static_cast<uint32_t>(instanceStart),
+                static_cast<uint32_t>(textRenderer.text.size()),
+                font.pixelRange,
+                PipelineType::Text,
+            };
         }
     };
     ts.ParallelForSync(textStorageSize, processText);
 
-    uint8_t* instanceBuffer = static_cast<uint8_t*>(uiInstanceBuffer.allocationInfo.pMappedData);
-    memcpy(instanceBuffer, textInstances.data(), totalGlyphs * sizeof(UIInstanceData));
+    renderItemsOffset += totalGlyphs;
 
-    const UIMeshGPUData& uiMesh = registry->GetResource<UIMeshGPUData>();
+    if (renderItemsOffset > maxUIInstanceCount)
+    {
+        RecreateUIInstanceBuffer(renderItemsOffset);
+    }
 
-    VkBuffer vertexBuffers[] = {
-        uiMesh.vertices.buffer,
-        uiInstanceBuffer.buffer,
-    };
+    std::sort(renderItems.begin(), renderItems.begin() + totalRenderItems);
 
-    VkDeviceSize vertexOffsets[] = {
-        0,
-        0
-    };
+    static std::vector<UIInstanceData> sortedInstances;
+    sortedInstances.clear();
+    sortedInstances.reserve(totalRenderItems);
 
-    vkCmdBindVertexBuffers(cmdBuffer, 0, 2, vertexBuffers, vertexOffsets);
-    vkCmdBindIndexBuffer(cmdBuffer, uiMesh.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+    for (int32_t i = 0; i < totalRenderItems; ++i)
+    {
+        const UIRenderItem& item = renderItems[i];
+        for (uint32_t j = 0; j < item.instanceCount; ++j)
+        {
+            sortedInstances.push_back(gInstances[item.instanceStart + j]);
+        }
+    }
 
-    const Canvas& mainCanvas = registry->GetResource<Canvas>();
-    vkCmdPushConstants(cmdBuffer, textPipelineIT->second->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(mainCanvas.projection));
+    uint32_t cursor = 0;
+    for (int32_t i = 0; i < totalRenderItems; ++i)
+    {
+        UIRenderItem& item = renderItems[i];
+        item.instanceStart = cursor;
+        cursor += item.instanceCount;
+    }
 
-    const float tempPxRange = 3.0f;
-    vkCmdPushConstants(cmdBuffer, textPipelineIT->second->GetLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), sizeof(float), &tempPxRange);
+    static std::vector<UIBatch> batches;
+    batches.reserve(totalRenderItems);
+    batches.clear();
 
-    vkCmdDrawIndexed(cmdBuffer, uiMesh.indicesCount, totalGlyphs, 0, 0, 0);
+    if (totalRenderItems != 0)
+    {
+        UIBatch current{};
+        current.instanceStart = renderItems[0].instanceStart;
+        current.instanceCount = renderItems[0].instanceCount;
+        current.pxRange = renderItems[0].pxRange;
+        current.pipeline = renderItems[0].pipeline;
+
+        for (int32_t i = 1; i < totalRenderItems; ++i)
+        {
+            const UIRenderItem& item = renderItems[i];
+
+            const bool compatible = item.pipeline == current.pipeline && item.pxRange == current.pxRange;
+
+            const bool contiguous = item.instanceStart == (current.instanceStart + current.instanceCount);
+
+            if (compatible && contiguous)
+            {
+                current.instanceCount += item.instanceCount;
+            }
+            else
+            {
+                batches.push_back(current);
+
+                current.instanceStart = item.instanceStart;
+                current.instanceCount = item.instanceCount;
+                current.pxRange = item.pxRange;
+                current.pipeline = item.pipeline;
+            }
+        }
+
+        batches.push_back(current);
+
+        memcpy(instanceBuffer, sortedInstances.data(), renderItemsOffset * sizeof(UIInstanceData));
+
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 2, vertexBuffers, vertexOffsets);
+        vkCmdBindIndexBuffer(cmdBuffer, uiMesh.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+        RenderPipeline* currentPipeline = nullptr;
+        for (const UIBatch& batch : batches)
+        {
+            const auto batchPipeline = pipelines.find(batch.pipeline);
+
+            if (batchPipeline->second != currentPipeline)
+            {
+                currentPipeline = batchPipeline->second;
+                currentPipeline->Bind(cmdBuffer);
+
+                vkCmdPushConstants(cmdBuffer, currentPipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(mainCanvas.projection));
+
+                if (batch.pipeline == PipelineType::Text)
+                {
+                    vkCmdPushConstants(cmdBuffer, currentPipeline->GetLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), sizeof(float), &batch.pxRange);
+                }
+            }
+
+            vkCmdDrawIndexed(cmdBuffer, uiMesh.indicesCount, batch.instanceCount, 0, 0, batch.instanceStart);
+        }
+    }
 
     vkCmdEndRenderPass(frame.commandBuffer);
 }
 #endif
 
-void RenderingSystem::SetViewportFullScreen()
+    void
+    RenderingSystem::SetViewportFullScreen()
 {
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -1154,7 +1469,6 @@ bool RenderingSystem::CreateUIRenderPass()
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = nullptr;
     subpass.pResolveAttachments = &colorAttachmentResolveRef;
 
     std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, colorAttachmentResolve };
@@ -1454,6 +1768,8 @@ void RenderingSystem::HandleWindowResized()
 {
     SDL_GetWindowSize(window, &width, &height);
     RecreateSwapChain();
+
+    onWindowResizeParam.raise(static_cast<float>(width), static_cast<float>(height));
 }
 
 void RenderingSystem::HandleWindowMinimized()
@@ -2123,7 +2439,18 @@ void RenderingSystem::CreateGizmosBuffers()
 
 void RenderingSystem::CreateUIInstanceBuffer()
 {
-    CreateBuffer(sizeof(UIInstanceData) * MAX_FRAMES_IN_FLIGHT * INITIAL_UI_INSTANCES, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, uiInstanceBuffer.buffer, uiInstanceBuffer.memory, &uiInstanceBuffer.allocationInfo);
+    maxUIInstanceCount = INITIAL_UI_INSTANCES;
+
+    CreateBuffer(sizeof(UIInstanceData) * MAX_FRAMES_IN_FLIGHT * maxUIInstanceCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, uiInstanceBuffer.buffer, uiInstanceBuffer.memory, &uiInstanceBuffer.allocationInfo);
+}
+
+void RenderingSystem::RecreateUIInstanceBuffer(int32_t newSize)
+{
+    maxUIInstanceCount = newSize;
+
+    DestroyBuffer(uiInstanceBuffer);
+
+    CreateBuffer(sizeof(UIInstanceData) * MAX_FRAMES_IN_FLIGHT * newSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_MAPPED_BIT, uiInstanceBuffer.buffer, uiInstanceBuffer.memory, &uiInstanceBuffer.allocationInfo);
 }
 
 void RenderingSystem::UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set,
@@ -2256,12 +2583,13 @@ void RenderingSystem::CreateTexture(const TextureData& textureData, uint8_t* pix
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = static_cast<VkFilter>(textureData.filter);
     samplerInfo.minFilter = static_cast<VkFilter>(textureData.filter);
+    samplerInfo.magFilter = static_cast<VkFilter>(textureData.filter);
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.anisotropyEnable = textureData.filter == TextureFilter::Nearest ? VK_FALSE : VK_TRUE;
+    samplerInfo.maxAnisotropy = 16.0f; // TODO add it to a context or somthing so it can be changed later?
 
     VkPhysicalDeviceProperties deviceProperties{};
     vkGetPhysicalDeviceProperties(context.physicalDevice, &deviceProperties);
@@ -2271,7 +2599,7 @@ void RenderingSystem::CreateTexture(const TextureData& textureData, uint8_t* pix
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.mipmapMode = textureData.filter == TextureFilter::Nearest ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.mipLodBias = 0.0f;
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;

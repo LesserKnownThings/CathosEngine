@@ -56,6 +56,7 @@ struct Font
 
     AllocatedTexture atlasTexture;
     uint32_t textureIndex;
+    float pixelRange;
     std::unordered_map<uint32_t, GlyphData> mappedGlyphs;
     std::unordered_map<std::pair<uint32_t, uint32_t>, float, PairHash> mappedKerningPairs;
 };

@@ -10,6 +10,8 @@ Texture2D::~Texture2D()
 
 Texture2D::Texture2D(const AssetPath& path)
 {
+    data.format = TextureFormat::RGBA_8_SRGB;
+    data.filter = TextureFilter::Nearest;
     TextureImporter::ImportTexture(path.GetPath(), this);
 }
 

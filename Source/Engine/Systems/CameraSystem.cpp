@@ -9,13 +9,6 @@
 
 REGISTER_SYSTEM(CameraSystem, SystemPhase::Presentation, DEPENDENCIES({}), DEPENDENCIES({ typeid(TransformSystem) }), 100);
 
-CameraSystem::CameraSystem()
-{
-    SystemRegistry& sreg = SystemRegistry::Get();
-    sreg.BindFunc<CameraSystem, &CameraSystem::Run>(this);
-    sreg.BindInitFunc<CameraSystem, &CameraSystem::Init>(this);
-}
-
 void CameraSystem::Init(Registry* registry, CommandBuffer& cmd)
 {
     // I'm not going to support multiple cameras, that's why the cam is a resource

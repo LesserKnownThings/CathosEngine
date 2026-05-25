@@ -2,7 +2,6 @@
 
 #include "Registry/CommandBuffer.h"
 #include <entt/entt.hpp>
-#include <functional>
 
 class Player;
 class RenderingSystem;
@@ -15,7 +14,7 @@ class World
     bool Initialize(int argc, const char* argv[]);
     void Shutdown();
 
-    void CreateWorld();
+    void CreateWorld(CommandBuffer& cmd);
 
     void Run();
     void NetPulse();
@@ -25,6 +24,8 @@ class World
     void GCPass();
 
   private:
+    void Test();
+
     World() = default;
 
     Registry* registry = nullptr;

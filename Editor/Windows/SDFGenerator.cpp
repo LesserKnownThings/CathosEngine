@@ -158,6 +158,7 @@ inline void ExportFontAsset()
         if (stream.is_open())
         {
             WriteAssetHeader(stream, FontAssetMetadata());
+            stream.write(reinterpret_cast<const char*>(&generatorData.pixelRange), sizeof(float));
             stream.write(reinterpret_cast<const char*>(&bitmap.width), sizeof(int32_t));
             stream.write(reinterpret_cast<const char*>(&bitmap.height), sizeof(int32_t));
             stream.write(reinterpret_cast<const char*>(bitmap.pixels), bitmap.width * bitmap.height * 3);

@@ -33,7 +33,7 @@ struct Texture2D
     Texture2D(const AssetPath& path);
     Texture2D(uint8_t* pixels, int32_t width, int32_t height);
 
-    TextureData data;
+    TextureData data{};
     AllocatedTexture renderTexture;
 
     // Index in the descriptor buffer

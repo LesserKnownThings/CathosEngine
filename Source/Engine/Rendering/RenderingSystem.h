@@ -61,7 +61,7 @@ constexpr uint32_t INTEL_GPU = 0x8086;
 
 constexpr int32_t MAX_INSTANCE_BUFFER = 20000;
 constexpr int32_t MAX_TEXTURE_COUNT = 1000;
-constexpr int32_t INITIAL_UI_INSTANCES = 10000;
+constexpr int32_t INITIAL_UI_INSTANCES = 500;
 
 struct SwapChainSupportDetails
 {
@@ -173,6 +173,8 @@ class RenderingSystem
         return window;
     }
 
+    CallMe::Event<void(float, float)> onWindowResizeParam;
+
   private:
     static uint32_t MIN_UNIFORM_ALIGNMENT;
 
@@ -254,6 +256,7 @@ class RenderingSystem
 
     // TODO I think I should maybe move this to the descriptor creation
     void CreateUIInstanceBuffer();
+    void RecreateUIInstanceBuffer(int32_t newSize);
 
     void AllocateDescriptorSet(VkDescriptorSetLayout layout, VkDescriptorSet& outSet, VkDescriptorPool pool, const void* next = nullptr);
     void UpdateDescriptorSet(VkDescriptorType type, VkDescriptorSet set, AllocatedBuffer buffer,
@@ -283,6 +286,8 @@ class RenderingSystem
 
     uint32_t currentFrame = 0;
     uint32_t imageIndex = 0;
+
+    uint32_t maxUIInstanceCount = 0;
 
     // Texture index tracking
     int32_t currentTextureIndex = 0;

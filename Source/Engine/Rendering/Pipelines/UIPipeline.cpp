@@ -1,31 +1,25 @@
-#include "MSDFTextPipeline.h"
+#include "UIPipeline.h"
 #include "Debug/DebugSystem.h"
 #include "Rendering/BindingDefinitions.h"
-#include "Rendering/DescriptorRegistry.h"
 #include "Rendering/Pipelines/RenderPipeline.h"
 #include "Rendering/RenderingSystem.h"
-#include "Rendering/VkContext.h"
 #include "UI/UIInstanceData.h"
 #include "UI/UIMeshData.h"
 #include "Utilities/FileHelper.h"
-#include <array>
-#include <cstddef>
-#include <glm/fwd.hpp>
-#include <vulkan/vulkan_core.h>
 
-REGISTER_PIPELINE(MSDFTextPipeline, PipelineType::Text)
+constexpr std::string UI_LOG = "UI";
 
-constexpr std::string TEXT_LOG = "Text";
+constexpr int32_t UI_SHADER_STAGES = 2;
+constexpr int32_t UI_DESCRIPTOR_SETS = 1;
 
-constexpr int32_t TEXT_SHADER_STAGES = 2;
-constexpr int32_t TEXT_DESCRIPTOR_SETS = 1;
+REGISTER_PIPELINE(UIPipeline, PipelineType::UI)
 
-void MSDFTextPipeline::Initialize()
+void UIPipeline::Initialize()
 {
-    std::array<VkPipelineShaderStageCreateInfo, TEXT_SHADER_STAGES> shaderStages{};
+    std::array<VkPipelineShaderStageCreateInfo, UI_SHADER_STAGES> shaderStages{};
 
     // Vertex
-    const std::string vertShaderPath = vertexPath + "/vert.spv";
+    const std::string vertShaderPath = shaderPath + "/vert.spv";
     auto vertShaderCode = FileHelper::ReadFile(vertShaderPath, std::ios::binary | std::ios::ate);
 
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
@@ -40,7 +34,7 @@ void MSDFTextPipeline::Initialize()
     shaderStages[0] = vertShaderStageInfo;
 
     // Fragment
-    const std::string fragShaderPath = fragmentPath + "/frag.spv";
+    const std::string fragShaderPath = shaderPath + "/frag.spv";
     auto fragShaderCode = FileHelper::ReadFile(fragShaderPath, std::ios::binary | std::ios::ate);
 
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
@@ -167,13 +161,12 @@ void MSDFTextPipeline::Initialize()
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
     colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
     colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
 
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     colorBlendAttachment.blendEnable = VK_TRUE;
 
@@ -184,8 +177,8 @@ void MSDFTextPipeline::Initialize()
     colorBlending.pAttachments = &colorBlendAttachment;
 
     const DescriptorRegistry& registry = RenderingSystem::GetRegistry();
-    std::array<VkDescriptorSetLayout, TEXT_DESCRIPTOR_SETS> descriptorSetLayouts{};
-    descriptorSets.resize(TEXT_DESCRIPTOR_SETS);
+    std::array<VkDescriptorSetLayout, UI_DESCRIPTOR_SETS> descriptorSetLayouts{};
+    descriptorSets.resize(UI_DESCRIPTOR_SETS);
 
     Descriptor textures;
     if (registry.GetDescriptor(TextureBinding::INDEX, textures))
@@ -194,14 +187,10 @@ void MSDFTextPipeline::Initialize()
         descriptorSets[0] = textures.set;
     }
 
-    std::array<VkPushConstantRange, 2> pushConstants{};
+    std::array<VkPushConstantRange, 1> pushConstants{};
     pushConstants[0].offset = 0;
     pushConstants[0].size = sizeof(glm::mat4);
     pushConstants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    pushConstants[1].offset = sizeof(glm::mat4);
-    pushConstants[1].size = sizeof(float);
-    pushConstants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -213,7 +202,7 @@ void MSDFTextPipeline::Initialize()
     if (vkCreatePipelineLayout(context.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) !=
         VK_SUCCESS)
     {
-        LOG(TEXT_LOG, Error, "Failed to create MSDFText pipeline layout!");
+        LOG(UI_LOG, Error, "Failed to create UI pipeline layout!");
     }
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -233,7 +222,7 @@ void MSDFTextPipeline::Initialize()
     if (vkCreateGraphicsPipelines(context.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                   &pipeline) != VK_SUCCESS)
     {
-        LOG(TEXT_LOG, Error, "Failed to create MSDFText pipeline!");
+        LOG(UI_LOG, Error, "Failed to create UI pipeline!");
     }
 
     for (VkPipelineShaderStageCreateInfo& stage : shaderStages)

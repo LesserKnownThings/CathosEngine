@@ -3,6 +3,7 @@
 #include "Components/Transform.h"
 #include "Factories.h"
 #include "Registry.h"
+#include "UI/UITransform.h"
 #include <cstddef>
 #include <cstdint>
 #include <entt/core/fwd.hpp>
@@ -199,6 +200,15 @@ class CommandBuffer
             else if (header->type == typeid(DestroyEntityCommand))
             {
                 auto& cmd = *reinterpret_cast<DestroyEntityCommand*>(data);
+
+                if (auto* children = reg.try_get<Children>(cmd.entity))
+                {
+                    for (entt::entity child : children->children)
+                    {
+                        reg.destroy(child);
+                    }
+                }
+
                 reg.destroy(cmd.entity);
             }
 

@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Callme/CallMe.h"
+#include "Systems/ISystem.h"
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <typeindex>
 #include <vector>
 
@@ -15,18 +17,18 @@ using InitFunc = CallMe::Delegate<void(Registry*, CommandBuffer&)>;
 
 #define DEPENDENCIES(...) __VA_ARGS__
 
-#define REGISTER_SYSTEM(SystemType, Phase, Before, After, SortIndex)         \
-    inline static struct Reg_##SystemType                                    \
-    {                                                                        \
-        Reg_##SystemType()                                                   \
-        {                                                                    \
-            SystemRegistry::Get().Add({ std::type_index(typeid(SystemType)), \
-                                        Phase,                               \
-                                        SortIndex,                           \
-                                        Before,                              \
-                                        After,                               \
-                                        []() { SystemType{}; } });           \
-        }                                                                    \
+#define REGISTER_SYSTEM(SystemType, Phase, Before, After, SortIndex)                                                    \
+    inline static struct Reg_##SystemType                                                                               \
+    {                                                                                                                   \
+        Reg_##SystemType()                                                                                              \
+        {                                                                                                               \
+            SystemRegistry::Get().Add({ std::type_index(typeid(SystemType)),                                            \
+                                        Phase,                                                                          \
+                                        SortIndex,                                                                      \
+                                        Before,                                                                         \
+                                        After,                                                                          \
+                                        []() -> std::unique_ptr<ISystem> { return std::make_unique<SystemType>(); } }); \
+        }                                                                                                               \
     } instance_##SystemType;
 
 enum class SystemPhase
@@ -42,17 +44,14 @@ struct SystemInfo
     uint32_t sortIndex;
     std::vector<std::type_index> before;
     std::vector<std::type_index> after;
-    std::function<void()> creator;
+    std::function<std::unique_ptr<ISystem>()> creator;
 };
 
 struct SystemMeta
 {
     std::type_index id;
     SystemPhase phase;
-    SystemFunc func;
-    SyncSystemFunc syncFunc;
-    InitFunc initFunc;
-    std::function<void()> creator;
+    std::unique_ptr<ISystem> system;
 };
 
 class SystemRegistry
@@ -65,49 +64,7 @@ class SystemRegistry
     void Run(Registry* registry, CommandBuffer& cmd, SystemPhase phase);
     void RunSync(Registry* registry, CommandBuffer& globalCmd, uint32_t tick, SystemPhase phase);
 
-    void Add(const SystemInfo& info)
-    {
-        infos.push_back(info);
-    }
-
-    template <typename T, auto M>
-    void BindInitFunc(T* instance)
-    {
-        for (auto& system : sortedSystems)
-        {
-            if (system.id == typeid(T))
-            {
-                system.initFunc = InitFunc(instance, CallMe::tag<M>());
-                break;
-            }
-        }
-    }
-
-    template <typename T, auto M>
-    void BindFunc(T* instance)
-    {
-        for (auto& system : sortedSystems)
-        {
-            if (system.id == typeid(T))
-            {
-                system.func = SystemFunc(instance, CallMe::tag<M>());
-                break;
-            }
-        }
-    }
-
-    template <typename T, auto M>
-    void BindSyncFunc(T* instance)
-    {
-        for (auto& system : sortedSystems)
-        {
-            if (system.id == typeid(T))
-            {
-                system.syncFunc = SyncSystemFunc(instance, CallMe::tag<M>());
-                break;
-            }
-        }
-    }
+    void Add(const SystemInfo& info);
 
   private:
     void Bake();

@@ -7,12 +7,17 @@
 #include <glm/ext/vector_float2.hpp>
 #include <vector>
 
+constexpr uint16_t MOUSE_JUST_PRESSED_STATE = 1 << 0;
+constexpr uint16_t MOUSE_DOWN_STATE = 1 << 1;
+constexpr uint16_t MOUSE_JUST_RELEASED_STATE = 1 << 2;
+
 class InputManager
 {
   public:
     static InputManager& Get();
 
     void PollInput();
+    void FlushInput();
 
     CallMe::Delegate<void()> onCloseGame;
     CallMe::Event<void()> onWindowResize;
@@ -29,12 +34,19 @@ class InputManager
     const glm::vec2& GetMouseDelta() const { return mouseDelta; }
     const glm::vec2& GetMousePosition() const { return mousePosition; }
 
+    bool IsMouseButtonJustPressed(uint8_t button) const;
+    bool IsMouseButtonJustReleased(uint8_t button) const;
+    bool IsMouseButtonDown(uint8_t button) const;
+
   private:
     InputManager();
 
     void ProcessKeys();
+    void ProcessButton(uint8_t button, uint32_t state);
 
     std::vector<Message> localCommands;
+
+    std::vector<uint32_t> mouseState;
 
     glm::vec2 mouseDelta;
     glm::vec2 mousePosition;

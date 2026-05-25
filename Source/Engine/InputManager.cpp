@@ -80,6 +80,9 @@ void InputManager::PollInput()
 
         if (e.button.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
         {
+            ProcessButton(e.button.button, MOUSE_JUST_PRESSED_STATE);
+            ProcessButton(e.button.button, MOUSE_DOWN_STATE);
+
             if ((cachedMouseButton & e.button.button) == 0)
             {
                 cachedMouseButton |= e.button.button;
@@ -88,12 +91,70 @@ void InputManager::PollInput()
         }
         else if (e.button.type == SDL_EVENT_MOUSE_BUTTON_UP)
         {
+            ProcessButton(e.button.button, MOUSE_JUST_RELEASED_STATE);
+
             onMouseReleased.raise(e.button.button);
             cachedMouseButton &= ~e.button.button;
         }
     }
 
     ProcessKeys();
+}
+
+void InputManager::FlushInput()
+{
+    for (int32_t i = 0; i < mouseState.size(); ++i)
+    {
+        const uint32_t combined = mouseState[i];
+
+        uint16_t state = combined & 0xFFFF;
+        uint8_t button = (combined >> 16) & 0xFF;
+
+        if ((state & MOUSE_JUST_RELEASED_STATE) != 0)
+        {
+            state &= ~MOUSE_DOWN_STATE;
+        }
+
+        state &= ~(MOUSE_JUST_PRESSED_STATE | MOUSE_JUST_RELEASED_STATE);
+
+        const uint32_t newCombined = state | (static_cast<uint32_t>(button) << 16);
+
+        if ((state & MOUSE_DOWN_STATE) == 0)
+        {
+            mouseState.erase(mouseState.begin() + i);
+            --i;
+        }
+        else
+        {
+            mouseState[i] = newCombined;
+        }
+    }
+}
+
+void InputManager::ProcessButton(uint8_t button, uint32_t state)
+{
+    auto it = std::find_if(mouseState.begin(), mouseState.end(), [&button](uint32_t iterator)
+                           { 
+                                uint8_t currentButton = (iterator >> 16) & 0xFF;
+                                return button == currentButton; });
+
+    if (it != mouseState.end())
+    {
+        const int32_t index = std::distance(mouseState.begin(), it);
+
+        const uint32_t combined = *it;
+
+        uint16_t currentState = combined & 0xFFFF;
+
+        currentState |= state;
+
+        mouseState[index] = currentState | (static_cast<uint32_t>(button) << 16);
+    }
+    else
+    {
+        const uint32_t combined = state | (static_cast<uint32_t>(button) << 16);
+        mouseState.push_back(combined);
+    }
 }
 
 void InputManager::ProcessKeys()
@@ -118,4 +179,55 @@ void InputManager::ProcessKeys()
     }
 
     SDL_GetMouseState(&mousePosition.x, &mousePosition.y);
+}
+
+bool InputManager::IsMouseButtonJustPressed(uint8_t button) const
+{
+    for (uint32_t currentMouseState : mouseState)
+    {
+        const uint16_t states = currentMouseState & 0xFFFF;
+        const uint8_t currentButton = (currentMouseState >> 16) & 0xFF;
+
+        const bool buttonsMatch = currentButton == button;
+        const bool flagsMatch = states & MOUSE_JUST_PRESSED_STATE;
+
+        if (buttonsMatch && flagsMatch)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool InputManager::IsMouseButtonJustReleased(uint8_t button) const
+{
+    for (uint32_t currentMouseState : mouseState)
+    {
+        const uint16_t states = currentMouseState & 0xFFFF;
+        const uint8_t currentButton = (currentMouseState >> 16) & 0xFF;
+
+        if (currentButton == button && (states & MOUSE_JUST_RELEASED_STATE))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool InputManager::IsMouseButtonDown(uint8_t button) const
+{
+    for (uint32_t currentMouseState : mouseState)
+    {
+        const uint16_t states = currentMouseState & 0xFFFF;
+        const uint8_t currentButton = (currentMouseState >> 16) & 0xFF;
+
+        if (currentButton == button && (states & MOUSE_DOWN_STATE))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }

@@ -1,14 +1,13 @@
 #pragma once
 
+#include "Systems/ISystem.h"
+
 class CommandBuffer;
 class Registry;
 
-class CameraSystem
+class CameraSystem : public ISystem
 {
-  public:
-    CameraSystem();
-
   private:
-    void Init(Registry* registry, CommandBuffer& cmd);
-    void Run(Registry* registry, CommandBuffer& cmd);
+    void Init(Registry* registry, CommandBuffer& cmd) override;
+    void Run(Registry* registry, CommandBuffer& cmd) override;
 };

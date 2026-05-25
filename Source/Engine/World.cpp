@@ -1,42 +1,34 @@
 #include "World.h"
 
-#include "Components/Collider.h"
-#include "Components/Color.h"
-#include "Components/Transform.h"
 #include "Game/CommandProcessor.h"
 #include "Game/Player.h"
-#include "InputManager.h"
-#include "Math/FixedMath.hpp"
 #include "Netcode/NetworkManager.h"
 #include "Registry/CommandBuffer.h"
 #include "Registry/Registry.h"
-#include "Rendering/Gizmos.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/AssetPath.h"
 #include "Resources/AssetServer.h"
 #include "Resources/Font.h"
+#include "Resources/Texture.h"
 #include "Systems/SystemRegistry.h"
+#include "UI/Button.h"
+#include "UI/LayoutBox.h"
+#include "UI/NineSlice.h"
 #include "UI/TextRenderer.h"
-#include "Utilities/SceneUtilities.h"
+#include "UI/UIMaterial.h"
+#include "UI/UITransform.h"
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
+#include <entt/resource/resource.hpp>
 #include <glm/ext/vector_float2.hpp>
-
-// inline void SpawnUnit(entt::registry& registry, )
-// {
-// }
+#include <iostream>
 
 bool World::Initialize(int argc, const char* argv[])
 {
-    // NetworkManager& netManager = NetworkManager::Get();
-    // success &= netManager.Initialize(argc, argv);
-
-    // Frontend::Get().Init(true);
-
     registry = new Registry();
-    CreateWorld();
 
     CommandBuffer cmd{};
+    CreateWorld(cmd);
     SystemRegistry::Get().Init(registry, cmd);
     cmd.Execute(registry);
 
@@ -57,13 +49,10 @@ void World::Shutdown()
 void World::Run()
 {
     NetworkManager::Get().Run();
-    InputManager::Get().PollInput();
 
     CommandBuffer cmd{};
     SystemRegistry::Get().Run(registry, cmd, SystemPhase::Simulation);
     cmd.Execute(registry);
-
-    // registry->Run();
     player->Run(simTick);
 }
 
@@ -118,41 +107,71 @@ void World::Render(float alpha)
     rs.EndFrame();
 }
 
-void World::CreateWorld()
+void World::CreateWorld(CommandBuffer& cmd)
 {
     registry = new Registry();
     player = new Player(registry);
 
-    // const fpm::fixed_16_16 row = fpm::fixed_16_16(i / 20);
-    // const fpm::fixed_16_16 col = fpm::fixed_16_16(i % 20);
-
-    // const Float3 rot = Float3(fpm::fixed_16_16(-90.0f), 0, 0);
-    // const Float3 pos = Float3(row * fpm::fixed_16_16(1.1f), 0, col * fpm::fixed_16_16(1.1f));
-
-    Transform tr1{
-        Float3{},
-        Float3{},
-        Float3{ .5f }
-    };
-
-    SceneData data{
-        AssetPath("Data/Meshes/cube.glb"),
-        AssetPath{},
-        Color::WHITE,
-        false,
-        Collider{
-            1.0f,
-            Float3{},
-            Float3{},
-            ColliderType::Sphere }
-    };
-
     entt::registry& reg = registry->Get();
-    auto testText = reg.create();
-    entt::resource<Font> font = registry->GetAssetServer().Load<Font>(AssetPath{ "Data/Fonts/TestFont.casset" });
-    reg.emplace<TextRenderer>(testText, font, "Hello World 12345", 75.0f);
 
-    // SceneUtilities::CreateScene(registry, globalCmd, tr1, data);
+    auto boxEntity = reg.create();
+    VBox box{
+        .offset = glm::vec4(0.0f),
+        .spacing = 15.0f,
+        .childStart = ChildStart::Start,
+        .controlHSize = true,
+        .controlVSize = true,
+    };
+    UITransform boxTransform{
+        .position = glm::vec2(100.0f),
+        .size = glm::vec2(100.0f),
+        .localZOrder = 0,
+    };
+    reg.emplace<UIPivot>(boxEntity);
+    reg.emplace<UIAnchor>(boxEntity, glm::vec2(0.0f, 0.0f), glm::vec2(1.0f, 1.0f));
+    reg.emplace<VBox>(boxEntity, box);
+    reg.emplace<UITransform>(boxEntity, boxTransform);
+
+    entt::resource<Texture2D> testImageTexture = registry->GetAssetServer().Load<Texture2D>(AssetPath{ "Data/Images/cover.png" });
+
+    const int32_t childrenSize = 0;
+    std::vector<entt::entity> children(childrenSize);
+    for (int32_t i = 0; i < childrenSize; ++i)
+    {
+        auto imageEntity = reg.create();
+        reg.emplace<UIMaterial>(imageEntity, testImageTexture);
+        reg.emplace<UITransform>(imageEntity, UITransform{ .size = glm::vec2(0.0f, 0.f) });
+        reg.emplace<ChildOf>(imageEntity, boxEntity);
+        reg.emplace<NineSlice>(imageEntity, 60.0f, 60.0f, 60.0f, 60.0f);
+
+        children[i] = imageEntity;
+    }
+
+    reg.emplace<Children>(boxEntity, children);
+
+    entt::resource<Texture2D> baseAbledo = registry->GetAssetServer().Load<Texture2D>(AssetPath{ "Data/Engine/Textures/base_albedo.png" });
+
+    for (int32_t i = 0; i < 2; ++i)
+    {
+        auto testImage2 = reg.create();
+        reg.emplace<UIMaterial>(testImage2, testImageTexture);
+        UITransform testImageTr2{
+            .position = glm::vec2(0.0f + i * 100.0f),
+            .size = glm::vec2(500.0f),
+            .localZOrder = 10,
+        };
+        reg.emplace<UITransform>(testImage2, testImageTr2);
+        reg.emplace<UIEventStyle>(testImage2, glm::vec4(1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.2f), glm::vec4(1.0f, 0.0f, 1.0f, 1.0f));
+
+        Button button{};
+        button.Connect<&World::Test>(this);
+        reg.emplace<Button>(testImage2, button);
+    }
+}
+
+void World::Test()
+{
+    std::cout << "HELLO FROM IMAGE 2" << std::endl;
 }
 
 void World::GCPass()

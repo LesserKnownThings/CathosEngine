@@ -24,6 +24,7 @@ Font::Font(const AssetPath& path)
         if (metadata == AssetTraits<FontAssetMetadata>::id)
         {
             int32_t width = 0, height = 0;
+            file.read(reinterpret_cast<char*>(&pixelRange), sizeof(float));
             file.read(reinterpret_cast<char*>(&width), sizeof(int32_t));
             file.read(reinterpret_cast<char*>(&height), sizeof(int32_t));
 
@@ -66,7 +67,7 @@ Font::Font(const AssetPath& path)
                 rgbaPixels[i * 4 + 0] = pixels[i * 3 + 0];
                 rgbaPixels[i * 4 + 1] = pixels[i * 3 + 1];
                 rgbaPixels[i * 4 + 2] = pixels[i * 3 + 2];
-                rgbaPixels[i * 4 + 3] = 255;
+                rgbaPixels[i * 4 + 3] = 0;
             }
 
             TextureData textureData{

@@ -61,7 +61,6 @@ bool Engine::Initialize(int argc, const char* argv[])
 
     uint64_t lastTime = SDL_GetTicksNS();
     uint64_t accumulator = 0;
-    uint64_t netAccumulator = 0;
 
     float gcDelay = 0.0f;
 
@@ -78,7 +77,6 @@ bool Engine::Initialize(int argc, const char* argv[])
         lastTime = currentTime;
 
         accumulator += frameTime;
-        netAccumulator += frameTime;
 
         im.PollInput();
 

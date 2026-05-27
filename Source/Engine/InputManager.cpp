@@ -188,10 +188,7 @@ bool InputManager::IsMouseButtonJustPressed(uint8_t button) const
         const uint16_t states = currentMouseState & 0xFFFF;
         const uint8_t currentButton = (currentMouseState >> 16) & 0xFF;
 
-        const bool buttonsMatch = currentButton == button;
-        const bool flagsMatch = states & MOUSE_JUST_PRESSED_STATE;
-
-        if (buttonsMatch && flagsMatch)
+        if (currentButton == button && (states & MOUSE_JUST_PRESSED_STATE))
         {
             return true;
         }

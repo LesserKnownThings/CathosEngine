@@ -2,6 +2,7 @@
 #include "InputManager.h"
 #include "Registry/Registry.h"
 #include "Rendering/RenderingSystem.h"
+#include "Resources/Font.h"
 #include "Systems/SystemRegistry.h"
 #include "TaskScheduler.h"
 #include "UI/Button.h"
@@ -16,6 +17,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/glm.hpp>
+#include <sstream>
 
 REGISTER_SYSTEM(UISystem, SystemPhase::Presentation, DEPENDENCIES({}), DEPENDENCIES({}), 0);
 
@@ -75,7 +77,7 @@ inline void ProcessUITransform(entt::registry& reg)
 {
     auto& parentPool = reg.storage<ChildOf>();
 
-    auto view = reg.view<UIRenderTransform, const UITransform, const UIAnchor, const UIPivot>(entt::exclude<ChildOf>);
+    auto view = reg.view<UIRenderTransform, const UITransform, const UIAnchor, const UIPivot>();
 
     MainOverlay& overlay = reg.ctx().get<MainOverlay>();
 
@@ -444,31 +446,82 @@ inline void UpdateInteraction(entt::registry& reg)
     }
 }
 
+inline std::vector<std::string> Split(const std::string& str, char delimiter)
+{
+    std::vector<std::string> tokens;
+    std::stringstream ss(str);
+    std::string token;
+
+    while (std::getline(ss, token, delimiter))
+    {
+        tokens.push_back(token);
+    }
+
+    return tokens;
+}
+
 void UISystem::Run(Registry* registry, CommandBuffer& cmd)
 {
     entt::registry& reg = registry->Get();
 
     // Since text rendering requires a text style component to render I'm making sure to add one if it's missing
-    auto textView = reg.view<const TextRenderer>(entt::exclude<TextStyle>);
+    reg.view<const TextRenderer>(entt::exclude<TextStyle>).each([&](entt::entity entity, const TextRenderer& tr)
+                                                                { reg.emplace<TextStyle>(entity); });
 
-    textView.each([&](entt::entity entity, const TextRenderer& tr)
-                  { reg.emplace<TextStyle>(entity); });
+    // I've noticed that other engines count the words for better text placement, trying something similar
+    auto textDetailsSetup = [&](entt::entity entity, const TextRenderer& tr) -> void
+    {
+        const Font& font = tr.font;
+        TextRendererDetails& textDetails = reg.emplace<TextRendererDetails>(entity, Split(tr.text, ' '));
+        textDetails.widths.reserve(textDetails.words.size());
 
-    // Making sure that all UI elements have an anchor and pivot
-    auto uiView = reg.view<const UITransform>(entt::exclude<UIAnchor, UIPivot>);
-    uiView.each([&](entt::entity entity, const UITransform& transform)
-                {
-        reg.emplace<UIAnchor>(entity);
-        reg.emplace<UIPivot>(entity); });
+        for (const std::string& word : textDetails.words)
+        {
+            float width = 0.0f;
+            for (int32_t l = 0; l < word.size(); ++l)
+            {
+                const char letter = word[l];
 
-    // The UI needs a render transform in order to work
-    auto noRenderUI = reg.view<const UITransform>(entt::exclude<UIRenderTransform>);
-    noRenderUI.each([&](entt::entity entity, const UITransform& transform)
-                    { reg.emplace<UIRenderTransform>(entity); });
+                auto glyphIT = font.mappedGlyphs.find(letter);
+                if (glyphIT == font.mappedGlyphs.end())
+                    continue;
 
-    auto noRenderOrderUI = reg.view<const UITransform>(entt::exclude<UIRenderOrder>);
-    noRenderOrderUI.each([&](entt::entity entity, const UITransform& transform)
-                         { reg.emplace<UIRenderOrder>(entity); });
+                width += glyphIT->second.advance * tr.fontSize;
+            }
+            textDetails.widths.push_back(width);
+        }
+    };
+    reg.view<const TextRenderer>(entt::exclude<TextRendererDetails>).each(textDetailsSetup);
+
+    // Adding missing UI components
+    auto& anchorStorage = reg.storage<UIAnchor>();
+    auto& pivotStorage = reg.storage<UIPivot>();
+    auto& renderTransformStorage = reg.storage<UIRenderTransform>();
+    auto& renderOrderStorage = reg.storage<UIRenderOrder>();
+
+    auto layoutFunc = [&](entt::entity entity, const UITransform& transform)
+    {
+        if (!anchorStorage.contains(entity))
+        {
+            anchorStorage.emplace(entity);
+        }
+
+        if (!pivotStorage.contains(entity))
+        {
+            pivotStorage.emplace(entity);
+        }
+
+        if (!renderTransformStorage.contains(entity))
+        {
+            renderTransformStorage.emplace(entity);
+        }
+
+        if (!renderOrderStorage.contains(entity))
+        {
+            renderOrderStorage.emplace(entity);
+        }
+    };
+    reg.view<const UITransform>().each(layoutFunc);
 
     if (windowResized)
     {

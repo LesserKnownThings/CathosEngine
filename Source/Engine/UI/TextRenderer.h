@@ -27,9 +27,16 @@ struct TextRenderer
 {
     std::string text;
     glm::vec4 color;
-    entt::resource<Font> font;
 
     float fontSize;
+
+    entt::resource<Font> font;
+};
+
+struct TextRendererDetails
+{
+    std::vector<std::string> words;
+    std::vector<float> widths;
 };
 
 struct TextStyle

@@ -70,8 +70,6 @@
 #include <backends/imgui_impl_vulkan.h>
 #endif
 
-#include <format>
-
 constexpr std::string VULKAN_LOG = "Vulkan";
 
 constexpr VkClearColorValue CLEAR_PASS_COLOR = { { 0.1f, 0.1f, 0.1f, 1.0f } };
@@ -232,6 +230,8 @@ void RenderingSystem::Render3D(Registry* registry, float alpha)
 
     vkCmdBeginRenderPass(frame.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     SetViewportFullScreen();
+    SetScissorFullScreen();
+
     vkCmdEndRenderPass(frame.commandBuffer);
 }
 
@@ -268,9 +268,9 @@ void RenderingSystem::RenderUI(Registry* registry, std::function<void()> editorR
 
     vkCmdEndRenderPass(frame.commandBuffer);
 }
-2
 #else
-// TODO instance and batching properly
+// TODO will have to add tracy here to check if the TaskScheduler is helping?
+// UI can run in 1 thread since the pools are pretty small
 void RenderingSystem::RenderUI(Registry* registry)
 {
     const Frame& frame = GetCurrentFrame();
@@ -355,7 +355,7 @@ void RenderingSystem::RenderUI(Registry* registry)
     auto sliceView = reg.view<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform, const UIRenderOrder>(entt::exclude<TextRenderer>);
     const auto sliceEntities = std::vector<entt::entity>(sliceView.begin(), sliceView.end());
 
-    auto textView = reg.view<const TextRenderer, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>();
+    auto textView = reg.view<const TextRenderer, const TextRendererDetails, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>();
     const auto textEntities = std::vector<entt::entity>(textView.begin(), textView.end());
 
     const int32_t imageStorageSize = imageEntities.size();
@@ -388,7 +388,7 @@ void RenderingSystem::RenderUI(Registry* registry)
             };
 
             renderItems[i] = UIRenderItem{
-                sortKey(renderOrder.renderOrder, material.pipeline),
+                sortKey(renderOrder.renderOrder, PipelineType::UI),
                 static_cast<uint32_t>(i),
                 1,
                 0.0f,
@@ -498,7 +498,7 @@ void RenderingSystem::RenderUI(Registry* registry)
             }
 
             renderItems[imageStorageSize + i] = UIRenderItem{
-                sortKey(renderOrder.renderOrder, material.pipeline),
+                sortKey(renderOrder.renderOrder, PipelineType::UI),
                 static_cast<uint32_t>(baseIndex),
                 9,
                 0.0f,
@@ -538,6 +538,8 @@ void RenderingSystem::RenderUI(Registry* registry)
     ts.ParallelForSync(textStorageSize, countGlyphs);
 
     std::vector<uint32_t> offsets(textStorageSize);
+    std::vector<float> glypsTotalWidth(textStorageSize);
+
     uint32_t totalGlyphs = 0;
     for (int32_t i = 0; i < textStorageSize; ++i)
     {
@@ -545,77 +547,270 @@ void RenderingSystem::RenderUI(Registry* registry)
         totalGlyphs += glyphCounter[i];
     }
 
-    textInstances.resize(totalGlyphs);
-    gInstances.resize(renderItemsOffset + totalGlyphs);
-
-    auto processText = [&textView, &textEntities, &offsets, &imageStorageSize, &sliceStorageSize, &renderItemsOffset, &sortKey](int32_t start, int32_t end)
+    auto processGlyphsWidth = [&](int32_t start, int32_t end) -> void
     {
         for (int32_t i = start; i < end; ++i)
         {
-            auto [textRenderer, textStyle, uiTransform, worldTransform, renderOrder] = textView.get<const TextRenderer, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>(textEntities[i]);
+            const TextRenderer& text = textView.get<const TextRenderer>(textEntities[i]);
+            const Font& font = text.font;
 
-            glm::vec2 cursor = worldTransform.position;
-            float lineHeight = textRenderer.fontSize * 1.5f;
+            float& width = glypsTotalWidth[i];
 
-            const Font& font = textRenderer.font;
-
-            for (int32_t l = 0; l < textRenderer.text.size(); ++l)
+            for (int32_t l = 0; l < text.text.size(); ++l)
             {
-                const char letter = textRenderer.text[l];
+                const char letter = text.text[l];
 
                 auto glyphIT = font.mappedGlyphs.find(letter);
                 if (glyphIT == font.mappedGlyphs.end())
                     continue;
 
-                const float advance = glyphIT->second.advance * textRenderer.fontSize;
+                const float advance = glyphIT->second.advance * text.fontSize;
 
-                if (textStyle.wrapText && cursor.x + advance > worldTransform.position.x + worldTransform.size.x)
-                {
-                    cursor.x = worldTransform.position.x;
-                    cursor.y += lineHeight;
-                }
+                width += advance;
 
                 if (l > 0)
                 {
-                    auto kerningIT = font.mappedKerningPairs.find(std::pair(textRenderer.text[l - 1], letter));
+                    auto kerningIT = font.mappedKerningPairs.find(std::pair(text.text[l - 1], letter));
                     if (kerningIT != font.mappedKerningPairs.end())
                     {
-                        cursor.x += kerningIT->second;
+                        width += kerningIT->second;
                     }
                 }
-
-                glm::vec2 pos = {
-                    cursor.x + (glyphIT->second.planeLeft * textRenderer.fontSize),
-                    cursor.y - (glyphIT->second.planeTop * textRenderer.fontSize)
-                };
-
-                glm::vec2 size = {
-                    (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
-                    (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
-                };
-
-                glm::vec4 uvRect = {
-                    glyphIT->second.uvLeft,
-                    glyphIT->second.uvBottom,
-                    glyphIT->second.uvRight,
-                    glyphIT->second.uvTop
-                };
-
-                gInstances[renderItemsOffset + offsets[i] + l] = UIInstanceData{
-                    pos,
-                    size,
-                    uvRect,
-                    textRenderer.color,
-                    font.textureIndex
-                };
-
-                textInstances[offsets[i] + l] = TextInstance{
-                    textRenderer.font.handle().get(),
-                    textEntities[i],
-                };
-
-                cursor.x += advance;
             }
+        }
+    };
+    ts.ParallelForSync(textStorageSize, processGlyphsWidth);
+
+    textInstances.resize(totalGlyphs);
+    gInstances.resize(renderItemsOffset + totalGlyphs);
+
+    struct TextLine
+    {
+        std::vector<int32_t> wordIndices;
+        float width;
+    };
+
+    auto processText = [&](int32_t start, int32_t end)
+    {
+        for (int32_t i = start; i < end; ++i)
+        {
+            auto [textRenderer, textDetails, textStyle, uiTransform, worldTransform, renderOrder] = textView.get<const TextRenderer, const TextRendererDetails, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>(textEntities[i]);
+
+            const Font& font = textRenderer.font;
+
+            const float spaceWidth = font.mappedGlyphs.at(' ').advance * textRenderer.fontSize;
+
+            glm::vec2 cursor = worldTransform.position;
+            const float lineWidth = glypsTotalWidth[i];
+
+            const float maxWidth = textStyle.wrapText ? worldTransform.size.x : std::numeric_limits<float>::max();
+
+            const float fontScale = textRenderer.fontSize / font.metadata.emSize;
+            const float scaledAscent = font.metadata.ascent * fontScale;
+            const float scaledDescent = font.metadata.descent * fontScale;
+            const float lineAdvance = font.metadata.lineHeight * fontScale;
+
+            std::vector<TextLine> lines;
+
+            TextLine currentLine{};
+            for (int32_t w = 0; w < textDetails.words.size(); ++w)
+            {
+                const std::string word = textDetails.words[w];
+                const float wordWidth = textDetails.widths[w];
+
+                if (currentLine.width + wordWidth > maxWidth)
+                {
+                    lines.push_back(currentLine);
+                    currentLine = {};
+                }
+
+                currentLine.wordIndices.push_back(w);
+                currentLine.width += wordWidth + spaceWidth;
+            }
+
+            if (!currentLine.wordIndices.empty())
+            {
+                lines.push_back(currentLine);
+            }
+
+            const float heightOffset = (lines.size() - 1) * lineAdvance;
+
+            switch (textStyle.vertical)
+            {
+            case TextVAlign::Top:
+                cursor.y = worldTransform.position.y + scaledAscent;
+                break;
+
+            case TextVAlign::Middle:
+                cursor.y = worldTransform.position.y + (worldTransform.size.y * 0.5f) + (scaledAscent * 0.5f) - (heightOffset * 0.5f);
+                break;
+
+            case TextVAlign::Bottom:
+                cursor.y = worldTransform.position.y + worldTransform.size.y - heightOffset;
+                break;
+            }
+
+            char* prevChar = nullptr;
+            int32_t lastLineOffset = 0;
+            glm::vec2 lineCursor = cursor;
+
+            for (int32_t li = 0; li < lines.size(); ++li)
+            {
+                const TextLine& line = lines[li];
+
+                float horizontalOffset = 0.0f;
+
+                switch (textStyle.horizontal)
+                {
+                case TextHAlign::Left:
+                    horizontalOffset = 0.0f;
+                    break;
+
+                case TextHAlign::Center:
+                    horizontalOffset = (worldTransform.size.x - line.width) * 0.5f;
+                    break;
+
+                case TextHAlign::Right:
+                    horizontalOffset = worldTransform.size.x - line.width;
+                    break;
+
+                case TextHAlign::Justified:
+                    // TODO, this is pretty annoying to fiugre out and I'm not sure I'll use it??
+                    break;
+                }
+
+                lineCursor.x += horizontalOffset;
+
+                int32_t lastWordOffset = 0;
+                for (int32_t wi = 0; wi < line.wordIndices.size(); ++wi)
+                {
+                    const std::string& word = textDetails.words[line.wordIndices[wi]];
+
+                    for (int32_t l = 0; l < word.size(); ++l)
+                    {
+                        char letter = word[l];
+
+                        auto glyphIT = font.mappedGlyphs.find(letter);
+                        if (glyphIT == font.mappedGlyphs.end())
+                            continue;
+
+                        const float advance =
+                            glyphIT->second.advance * textRenderer.fontSize;
+
+                        if (prevChar != nullptr)
+                        {
+                            auto kerningIT = font.mappedKerningPairs.find(std::pair(*prevChar, letter));
+                            if (kerningIT != font.mappedKerningPairs.end())
+                            {
+                                cursor.x += kerningIT->second;
+                            }
+                        }
+
+                        glm::vec2 pos = {
+                            lineCursor.x + glyphIT->second.planeLeft * textRenderer.fontSize,
+                            lineCursor.y - glyphIT->second.planeTop * textRenderer.fontSize
+                        };
+
+                        glm::vec2 size = {
+                            (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
+                            (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
+                        };
+
+                        glm::vec4 uvRect = {
+                            glyphIT->second.uvLeft,
+                            glyphIT->second.uvBottom,
+                            glyphIT->second.uvRight,
+                            glyphIT->second.uvTop
+                        };
+
+                        gInstances[renderItemsOffset + offsets[i] + lastLineOffset + lastWordOffset + l] = UIInstanceData{
+                            pos,
+                            size,
+                            uvRect,
+                            textRenderer.color,
+                            font.textureIndex
+                        };
+
+                        textInstances[offsets[i] + lastLineOffset + lastWordOffset + l] = TextInstance{
+                            textRenderer.font.handle().get(),
+                            textEntities[i],
+                        };
+
+                        prevChar = &letter;
+                        lineCursor.x += advance;
+                    }
+
+                    lastWordOffset += word.size();
+                    lineCursor.x += spaceWidth;
+                }
+
+                for (int32_t wordIndex : line.wordIndices)
+                {
+                    lastLineOffset += textDetails.words[wordIndex].size();
+                }
+
+                lineCursor.x = cursor.x;
+                lineCursor.y += lineAdvance;
+            }
+
+            // for (int32_t l = 0; l < textRenderer.text.size(); ++l)
+            // {
+            //     const char letter = textRenderer.text[l];
+
+            //     auto glyphIT = font.mappedGlyphs.find(letter);
+            //     if (glyphIT == font.mappedGlyphs.end())
+            //         continue;
+
+            //     const float advance = glyphIT->second.advance * textRenderer.fontSize;
+
+            //     if (l > 0)
+            //     {
+            //         auto kerningIT = font.mappedKerningPairs.find(std::pair(textRenderer.text[l - 1], letter));
+            //         if (kerningIT != font.mappedKerningPairs.end())
+            //         {
+            //             cursor.x += kerningIT->second;
+            //         }
+            //     }
+
+            //     if (textStyle.wrapText)
+            //     {
+            //         if (cursor.x < worldTransform.position.x)
+            //         {
+            //         }
+            //     }
+
+            //     glm::vec2 pos = {
+            //         cursor.x + (glyphIT->second.planeLeft * textRenderer.fontSize),
+            //         cursor.y - (glyphIT->second.planeTop * textRenderer.fontSize)
+            //     };
+
+            //     glm::vec2 size = {
+            //         (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
+            //         (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
+            //     };
+
+            //     glm::vec4 uvRect = {
+            //         glyphIT->second.uvLeft,
+            //         glyphIT->second.uvBottom,
+            //         glyphIT->second.uvRight,
+            //         glyphIT->second.uvTop
+            //     };
+
+            //     gInstances[renderItemsOffset + offsets[i] + l] = UIInstanceData{
+            //         pos,
+            //         size,
+            //         uvRect,
+            //         textRenderer.color,
+            //         font.textureIndex
+            //     };
+
+            //     textInstances[offsets[i] + l] = TextInstance{
+            //         textRenderer.font.handle().get(),
+            //         textEntities[i],
+            //     };
+
+            //     cursor.x += advance;
+            // }
 
             const int32_t instanceStart = renderItemsOffset + offsets[i];
             renderItems[imageStorageSize + sliceStorageSize + offsets[i]] = UIRenderItem{
@@ -727,8 +922,7 @@ void RenderingSystem::RenderUI(Registry* registry)
 }
 #endif
 
-    void
-    RenderingSystem::SetViewportFullScreen()
+void RenderingSystem::SetViewportFullScreen()
 {
     VkViewport viewport{};
     viewport.x = 0.0f;

@@ -18,13 +18,14 @@ Font::Font(const AssetPath& path)
     std::ifstream file(path.GetPath(), std::ios::binary);
     if (file.is_open())
     {
-        uint32_t metadata;
-        file.read(reinterpret_cast<char*>(&metadata), sizeof(uint32_t));
+        uint32_t header;
+        file.read(reinterpret_cast<char*>(&header), sizeof(uint32_t));
 
-        if (metadata == AssetTraits<FontAssetMetadata>::id)
+        if (header == AssetTraits<FontAssetHeader>::id)
         {
             int32_t width = 0, height = 0;
             file.read(reinterpret_cast<char*>(&pixelRange), sizeof(float));
+            file.read(reinterpret_cast<char*>(&metadata), sizeof(FontMetadata));
             file.read(reinterpret_cast<char*>(&width), sizeof(int32_t));
             file.read(reinterpret_cast<char*>(&height), sizeof(int32_t));
 

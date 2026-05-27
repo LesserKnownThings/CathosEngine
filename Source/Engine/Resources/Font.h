@@ -33,8 +33,14 @@ struct KerningPair
     float advanceAdjust;
 };
 
-struct FontAssetMetadata
+struct FontMetadata
 {
+    float ascent;
+    float descent;
+    float lineHeight;
+    float emSize;
+    float underlineY;
+    float underlineThickness;
 };
 
 struct PairHash
@@ -49,6 +55,11 @@ struct PairHash
     }
 };
 
+// Used as a header for assets to check the type
+struct FontAssetHeader
+{
+};
+
 struct Font
 {
     ~Font();
@@ -57,6 +68,9 @@ struct Font
     AllocatedTexture atlasTexture;
     uint32_t textureIndex;
     float pixelRange;
+
+    FontMetadata metadata;
+
     std::unordered_map<uint32_t, GlyphData> mappedGlyphs;
     std::unordered_map<std::pair<uint32_t, uint32_t>, float, PairHash> mappedKerningPairs;
 };

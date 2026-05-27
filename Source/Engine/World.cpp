@@ -32,9 +32,6 @@ bool World::Initialize(int argc, const char* argv[])
     SystemRegistry::Get().Init(registry, cmd);
     cmd.Execute(registry);
 
-    AssetServer& as = registry->GetAssetServer();
-    as.Load<Font>(AssetPath{ "Data/Fonts/TestFont.casset" });
-
     return true;
 }
 
@@ -111,6 +108,7 @@ void World::CreateWorld(CommandBuffer& cmd)
 {
     registry = new Registry();
     player = new Player(registry);
+    AssetServer& as = registry->GetAssetServer();
 
     entt::registry& reg = registry->Get();
 
@@ -128,11 +126,11 @@ void World::CreateWorld(CommandBuffer& cmd)
         .localZOrder = 0,
     };
     reg.emplace<UIPivot>(boxEntity);
-    reg.emplace<UIAnchor>(boxEntity, glm::vec2(0.0f, 0.0f), glm::vec2(1.0f, 1.0f));
+    reg.emplace<UIAnchor>(boxEntity, glm::vec2(0.0f), glm::vec2(1.0f));
     reg.emplace<VBox>(boxEntity, box);
     reg.emplace<UITransform>(boxEntity, boxTransform);
 
-    entt::resource<Texture2D> testImageTexture = registry->GetAssetServer().Load<Texture2D>(AssetPath{ "Data/Images/cover.png" });
+    entt::resource<Texture2D> testImageTexture = as.Load<Texture2D>(AssetPath{ "Data/Images/cover.png" });
 
     const int32_t childrenSize = 0;
     std::vector<entt::entity> children(childrenSize);
@@ -149,24 +147,45 @@ void World::CreateWorld(CommandBuffer& cmd)
 
     reg.emplace<Children>(boxEntity, children);
 
-    entt::resource<Texture2D> baseAbledo = registry->GetAssetServer().Load<Texture2D>(AssetPath{ "Data/Engine/Textures/base_albedo.png" });
+    entt::resource<Texture2D> baseAbledo = as.Load<Texture2D>(AssetPath{ "Data/Engine/Textures/base_albedo.png" });
 
-    for (int32_t i = 0; i < 2; ++i)
-    {
-        auto testImage2 = reg.create();
-        reg.emplace<UIMaterial>(testImage2, testImageTexture);
-        UITransform testImageTr2{
-            .position = glm::vec2(0.0f + i * 100.0f),
-            .size = glm::vec2(500.0f),
-            .localZOrder = 10,
-        };
-        reg.emplace<UITransform>(testImage2, testImageTr2);
-        reg.emplace<UIEventStyle>(testImage2, glm::vec4(1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.2f), glm::vec4(1.0f, 0.0f, 1.0f, 1.0f));
+    auto testImage2 = reg.create();
+    reg.emplace<UIMaterial>(testImage2, baseAbledo);
+    UITransform testImageTr2{
+        .position = glm::vec2(0.0f),
+        .size = glm::vec2(500.0f),
+        .localZOrder = 10,
+    };
+    reg.emplace<UITransform>(testImage2, testImageTr2);
+    reg.emplace<UIEventStyle>(testImage2, glm::vec4(1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 0.2f), glm::vec4(1.0f, 0.0f, 1.0f, 1.0f));
 
-        Button button{};
-        button.Connect<&World::Test>(this);
-        reg.emplace<Button>(testImage2, button);
-    }
+    Button button{};
+    button.Connect<&World::Test>(this);
+    reg.emplace<Button>(testImage2, button);
+
+    auto font = as.Load<Font>(AssetPath{ "Data/Fonts/CauseFont.casset" });
+
+    auto textEntity = reg.create();
+    UITransform textTransform{ .localZOrder = 100 };
+    reg.emplace<UITransform>(textEntity, textTransform);
+    TextRenderer tr{
+        "TESTING text AbCdE12345",
+        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
+        60.0f,
+        font
+    };
+    TextStyle textStyle{
+        .horizontal = TextHAlign::Right,
+        .vertical = TextVAlign::Middle,
+        .wrapText = false,
+    };
+    reg.emplace<TextStyle>(textEntity, textStyle);
+    reg.emplace<TextRenderer>(textEntity, tr);
+    reg.emplace<ChildOf>(textEntity, testImage2);
+    reg.emplace<UIAnchor>(textEntity, glm::vec2(0.0f), glm::vec2(1.0f));
+    reg.emplace<UIPivot>(textEntity);
+
+    reg.emplace<Children>(testImage2, std::vector<entt::entity>{ textEntity });
 }
 
 void World::Test()

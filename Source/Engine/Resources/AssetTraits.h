@@ -3,13 +3,13 @@
 #include <cstdint>
 #include <fstream>
 
-struct FontAssetMetadata;
+struct FontAssetHeader;
 
 template <typename T>
 struct AssetTraits;
 
 template <>
-struct AssetTraits<FontAssetMetadata>
+struct AssetTraits<FontAssetHeader>
 {
     static constexpr uint32_t id = 0;
 };

@@ -13,7 +13,6 @@
 #include "imgui.h"
 #include "msdfgen/core/edge-coloring.h"
 #include "msdfgen/ext/import-font.h"
-#include "nlohmann/json.hpp"
 #include "tinyfiledialogs.h"
 
 #include "types.h"
@@ -26,7 +25,6 @@
 
 REGISTER_WINDOW(SDFGenerator, "Windows/Tools/SDF Generator", true)
 
-using json = nlohmann::json;
 using namespace msdf_atlas;
 
 constexpr int32_t MAX_STRING_BUFFER = 256;
@@ -53,6 +51,8 @@ struct GeneratorData
 };
 
 GeneratorData generatorData;
+FontMetadata fontMetadata;
+
 bool isGenerating = false;
 std::atomic<bool> isGeneratorDone = false;
 std::string fontPath;
@@ -76,6 +76,18 @@ inline void GenerateAtlas(const std::string& fontFile)
                 {
                     glyph.edgeColoring(&msdfgen::edgeColoringInkTrap, generatorData.maxCornerAngle, 0);
                 }
+
+                msdfgen::FontMetrics metrics{};
+                if(msdfgen::getFontMetrics(metrics, font))
+                {
+                    fontMetadata.ascent = static_cast<float>(metrics.ascenderY);
+                    fontMetadata.descent = static_cast<float>(metrics.descenderY);
+                    fontMetadata.lineHeight = static_cast<float>(metrics.lineHeight);
+                    fontMetadata.emSize = static_cast<float>(metrics.emSize);
+                    fontMetadata.underlineY = static_cast<float>(metrics.underlineY);
+                    fontMetadata.underlineThickness = static_cast<float>(metrics.underlineThickness);
+                }
+
                 TightAtlasPacker packer{};
                 packer.setDimensionsConstraint(DimensionsConstraint::SQUARE);
                 packer.setMinimumScale(generatorData.minScale);
@@ -157,8 +169,9 @@ inline void ExportFontAsset()
 
         if (stream.is_open())
         {
-            WriteAssetHeader(stream, FontAssetMetadata());
+            WriteAssetHeader(stream, FontAssetHeader());
             stream.write(reinterpret_cast<const char*>(&generatorData.pixelRange), sizeof(float));
+            stream.write(reinterpret_cast<const char*>(&fontMetadata), sizeof(FontMetadata));
             stream.write(reinterpret_cast<const char*>(&bitmap.width), sizeof(int32_t));
             stream.write(reinterpret_cast<const char*>(&bitmap.height), sizeof(int32_t));
             stream.write(reinterpret_cast<const char*>(bitmap.pixels), bitmap.width * bitmap.height * 3);

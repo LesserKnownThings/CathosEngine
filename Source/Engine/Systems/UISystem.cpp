@@ -1,10 +1,10 @@
 #include "UISystem.h"
+#include "Components/Hierarchy.h"
 #include "InputManager.h"
 #include "Registry/Registry.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/Font.h"
 #include "Systems/SystemRegistry.h"
-#include "TaskScheduler.h"
 #include "UI/Button.h"
 #include "UI/Canvas.h"
 #include "UI/LayoutBox.h"
@@ -14,7 +14,9 @@
 #include "UI/UIMaterial.h"
 #include "UI/UIMeshData.h"
 #include "UI/UITransform.h"
+#include "UI/UIVisibility.h"
 #include <SDL3/SDL_mouse.h>
+#include <entt/entity/fwd.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/glm.hpp>
 #include <sstream>
@@ -73,278 +75,261 @@ void UISystem::Init(Registry* registry, CommandBuffer& cmd)
     windowResizedHandle = rs.onWindowResizeParam.subscribe(CallMe::fromMethod<&UISystem::HandleWindowResized>(this));
 }
 
-inline void ProcessUITransform(entt::registry& reg)
+inline void ProcessUIVisibility(entt::registry& reg)
 {
-    auto& parentPool = reg.storage<ChildOf>();
+    auto view = reg.view<UIVisiblity>();
 
-    auto view = reg.view<UIRenderTransform, const UITransform, const UIAnchor, const UIPivot>();
-
-    MainOverlay& overlay = reg.ctx().get<MainOverlay>();
-
-    auto func = [&](entt::entity entity, UIRenderTransform& renderTransform, const UITransform& transform, const UIAnchor& anchor, const UIPivot& pivot)
+    // Process visibility mode first
+    auto visiblityModeFunc = [&](UIVisiblity& visibility)
     {
-        glm::vec2 originPosition = transform.position;
-        glm::vec2 originSize = glm::vec2(overlay.width, overlay.height);
+        switch (visibility.mode)
+        {
+        case VisibilityMode::Visibile:
+            visibility.isVisible = true;
+            break;
+        default:
+            visibility.isVisible = false;
+            break;
+        }
+    };
+    view.each(visiblityModeFunc);
 
-        glm::vec2 anchorMin = anchor.min;
-        glm::vec2 anchorMax = anchor.max;
+    const auto& parentPool = reg.storage<ChildOf>();
 
+    auto hierarchyFunc = [&](entt::entity entity, UIVisiblity& visibility) -> void
+    {
         if (parentPool.contains(entity))
         {
-            const ChildOf& parent = parentPool.get(entity);
-            const UIRenderTransform& parentTransform = view.get<const UIRenderTransform>(parent.entity);
+            const auto& parent = parentPool.get(entity);
+            const UIVisiblity& parentVisibility = view.get<const UIVisiblity>(parent.entity);
 
-            originPosition = parentTransform.position;
-            originSize = parentTransform.size;
+            visibility.isVisible = parentVisibility.isVisible;
         }
-
-        anchorMin.x = originPosition.x + (originSize.x * anchorMin.x);
-        anchorMin.y = originPosition.y + (originSize.y * anchorMin.y);
-
-        anchorMax.x = originPosition.x + (originSize.x * anchorMax.x);
-        anchorMax.y = originPosition.y + (originSize.y * anchorMax.y);
-
-        glm::vec2 anchorRectSize = anchorMax - anchorMin;
-        glm::vec2 pivotOffset = transform.size * glm::vec2(pivot.x, pivot.y);
-
-        bool stretchX = anchor.min.x != anchor.max.x;
-        bool stretchY = anchor.min.y != anchor.max.y;
-
-        glm::vec2 finalSize = transform.size;
-        glm::vec2 finalPosition = anchorMin + transform.position - pivotOffset;
-
-        if (stretchX)
-        {
-            finalSize.x = anchorRectSize.x - transform.position.x - transform.size.x;
-            finalPosition.x = anchorMin.x;
-        }
-
-        if (stretchY)
-        {
-            finalSize.y = anchorRectSize.y - transform.position.y - transform.size.y;
-            finalPosition.y = anchorMin.y;
-        }
-
-        renderTransform.position = finalPosition;
-        renderTransform.size = finalSize;
     };
-    view.each(func);
+    view.each(hierarchyFunc);
+}
 
-    auto& renderOrderPool = reg.storage<UIRenderOrder>();
-    auto& childrenPool = reg.storage<Children>();
-    auto& transformPool = reg.storage<UITransform>();
+inline void ComputeSingleUITransform(entt::registry& reg, entt::entity entity, entt::entity parentEntity, const MainOverlay& overlay)
+{
+    auto& renderTransform = reg.get<UIRenderTransform>(entity);
+    const auto& transform = reg.get<UITransform>(entity);
 
-    auto rootView = reg.view<UIRenderOrder>(entt::exclude<ChildOf>);
-
-    auto propagate = [&](auto& self, entt::entity entity, int32_t parentZ) -> void
+    if (auto* visibility = reg.try_get<UIVisiblity>(entity))
     {
-        auto& currentOrder = renderOrderPool.get(entity);
+        if (!visibility->isVisible && visibility->mode == VisibilityMode::Collapsed)
+        {
+            renderTransform.position = glm::vec2(0.0f);
+            renderTransform.size = glm::vec2(0.0f);
+            return;
+        }
+    }
+
+    glm::vec2 originPosition = glm::vec2(0.0f);
+    glm::vec2 originSize = glm::vec2(overlay.width, overlay.height);
+
+    if (parentEntity != entt::null)
+    {
+        const auto& parentTransform = reg.get<UIRenderTransform>(parentEntity);
+        originPosition = parentTransform.position;
+        originSize = parentTransform.size;
+    }
+
+    glm::vec2 anchorMin = transform.anchorMin;
+    glm::vec2 anchorMax = transform.anchorMax;
+
+    anchorMin.x = originPosition.x + (originSize.x * anchorMin.x);
+    anchorMin.y = originPosition.y + (originSize.y * anchorMin.y);
+    anchorMax.x = originPosition.x + (originSize.x * anchorMax.x);
+    anchorMax.y = originPosition.y + (originSize.y * anchorMax.y);
+
+    glm::vec2 anchorRectSize = anchorMax - anchorMin;
+    glm::vec2 pivotOffset = transform.size * transform.pivot;
+
+    bool stretchX = transform.anchorMin.x != transform.anchorMax.x;
+    bool stretchY = transform.anchorMin.y != transform.anchorMax.y;
+
+    glm::vec2 finalSize = transform.size;
+    glm::vec2 finalPosition = anchorMin + transform.position - pivotOffset;
+
+    if (stretchX)
+    {
+        finalSize.x = anchorRectSize.x - transform.position.x - transform.size.x;
+        finalPosition.x = transform.position.x + anchorMin.x;
+    }
+    if (stretchY)
+    {
+        finalSize.y = anchorRectSize.y - transform.position.y - transform.size.y;
+        finalPosition.y = transform.position.x + anchorMin.y;
+    }
+
+    renderTransform.position = finalPosition;
+    renderTransform.size = finalSize;
+}
+
+inline void ApplyLayoutBoxToChildren(entt::registry& reg, entt::entity parent)
+{
+    const auto* childrenComp = reg.try_get<Children>(parent);
+    if (!childrenComp || childrenComp->children.empty())
+        return;
+
+    const auto& renderTransform = reg.get<UIRenderTransform>(parent);
+
+    if (const auto* vBox = reg.try_get<VBox>(parent))
+    {
+        const int32_t count = childrenComp->children.size();
+        const float fCount = static_cast<float>(count);
+        const float offsetSize = vBox->offset.z + vBox->offset.w;
+        const float spacingSize = (vBox->spacing * (fCount - 1.0f)) + offsetSize;
+        const float equalVSize = (renderTransform.size.y - spacingSize) / fCount;
+
+        float totalChildrenHeight = 0.0f;
+        if (vBox->controlVSize)
+        {
+            totalChildrenHeight = renderTransform.size.y - offsetSize;
+        }
+        else
+        {
+            for (entt::entity child : childrenComp->children)
+            {
+                totalChildrenHeight += reg.get<UIRenderTransform>(child).size.y;
+            }
+            totalChildrenHeight += vBox->spacing * (fCount - 1.0f);
+        }
+
+        float alignmentOffset = 0.0f;
+        const float availableHeight = renderTransform.size.y - offsetSize;
+        const float remainingSpace = availableHeight - totalChildrenHeight;
+
+        switch (vBox->childStart)
+        {
+        case ChildStart::Middle:
+            alignmentOffset = remainingSpace * 0.5f;
+            break;
+        case ChildStart::End:
+            alignmentOffset = remainingSpace;
+            break;
+        default:
+            alignmentOffset = 0.0f;
+            break;
+        }
+
+        float cursorY = renderTransform.position.y + vBox->offset.z + alignmentOffset;
+
+        for (entt::entity child : childrenComp->children)
+        {
+            auto& childTransform = reg.get<UIRenderTransform>(child);
+            if (vBox->controlVSize)
+                childTransform.size.y = equalVSize;
+            if (vBox->controlHSize)
+                childTransform.size.x = renderTransform.size.x - (vBox->offset.x + vBox->offset.y);
+
+            childTransform.position.x = renderTransform.position.x + vBox->offset.x;
+            childTransform.position.y = cursorY;
+
+            cursorY += childTransform.size.y + vBox->spacing;
+        }
+    }
+
+    if (const auto* hBox = reg.try_get<HBox>(parent))
+    {
+        const int32_t count = childrenComp->children.size();
+        const float fCount = static_cast<float>(count);
+        const float offsetSize = hBox->offset.x + hBox->offset.y;
+        const float spacingSize = (hBox->spacing * (fCount - 1.0f)) + offsetSize;
+        const float equalHSize = (renderTransform.size.x - spacingSize) / fCount;
+
+        float totalChildrenWidth = 0.0f;
+        if (hBox->controlHSize)
+        {
+            totalChildrenWidth = renderTransform.size.x - offsetSize;
+        }
+        else
+        {
+            for (entt::entity child : childrenComp->children)
+            {
+                totalChildrenWidth += reg.get<UIRenderTransform>(child).size.x;
+            }
+            totalChildrenWidth += hBox->spacing * (fCount - 1.0f);
+        }
+
+        float alignmentOffset = 0.0f;
+        const float availableWidth = renderTransform.size.x - offsetSize;
+        const float remainingSpace = availableWidth - totalChildrenWidth;
+
+        switch (hBox->childStart)
+        {
+        case ChildStart::Middle:
+            alignmentOffset = remainingSpace * 0.5f;
+            break;
+        case ChildStart::End:
+            alignmentOffset = remainingSpace;
+            break;
+        default:
+            alignmentOffset = 0.0f;
+            break;
+        }
+
+        float cursorX = renderTransform.position.x + hBox->offset.y + alignmentOffset;
+
+        for (entt::entity child : childrenComp->children)
+        {
+            auto& childTransform = reg.get<UIRenderTransform>(child);
+            if (hBox->controlHSize)
+                childTransform.size.x = equalHSize;
+            if (hBox->controlVSize)
+                childTransform.size.y = renderTransform.size.y - (hBox->offset.z + hBox->offset.w);
+
+            childTransform.position.x = cursorX;
+            childTransform.position.y = renderTransform.position.y + hBox->offset.z;
+
+            cursorX += childTransform.size.x + hBox->spacing;
+        }
+    }
+}
+
+inline void UpdateLayoutAndTransforms(entt::registry& reg)
+{
+    MainOverlay& overlay = reg.ctx().get<MainOverlay>();
+    auto rootView = reg.view<UIRenderTransform>(entt::exclude<ChildOf>);
+
+    auto resolveHierarchy = [&](auto& self, entt::entity entity, entt::entity parentEntity, int32_t parentZ) -> void
+    {
+        auto& currentOrder = reg.get<UIRenderTransform>(entity);
         currentOrder.renderOrder = parentZ + 1;
 
-        if (childrenPool.contains(entity))
+        if (reg.all_of<Children>(entity))
         {
-            const auto& childrenComp = childrenPool.get(entity);
+            const auto& childrenComp = reg.get<Children>(entity);
+
             for (entt::entity child : childrenComp.children)
             {
-                self(self, child, currentOrder.renderOrder);
+                ComputeSingleUITransform(reg, child, entity, overlay);
+            }
+
+            ApplyLayoutBoxToChildren(reg, entity);
+
+            for (entt::entity child : childrenComp.children)
+            {
+                self(self, child, entity, currentOrder.renderOrder);
             }
         }
     };
 
     for (entt::entity root : rootView)
     {
-        auto& rootOrder = renderOrderPool.get(root);
-        const UITransform& transform = transformPool.get(root);
-        rootOrder.renderOrder = transform.localZOrder;
+        ComputeSingleUITransform(reg, root, entt::null, overlay);
 
-        if (childrenPool.contains(root))
+        auto& rootOrder = reg.get<UIRenderTransform>(root);
+        if (auto* transform = reg.try_get<UITransform>(root))
         {
-            const auto& childrenComp = childrenPool.get(root);
-            for (entt::entity child : childrenComp.children)
-            {
-                propagate(propagate, child, rootOrder.renderOrder);
-            }
+            rootOrder.renderOrder = transform->localZOrder;
         }
+
+        resolveHierarchy(resolveHierarchy, root, entt::null, rootOrder.renderOrder);
     }
 
-    // TODO sort the registry only when needed!! I'll have to cache the state
-    reg.sort<UIRenderOrder>([&](const UIRenderOrder& lhs, const UIRenderOrder& rhs)
-                            { return lhs.renderOrder < rhs.renderOrder; });
-}
-
-inline void ProcessLayoutBox(entt::registry& reg)
-{
-    TaskScheduler& ts = TaskScheduler::Get();
-
-    MainOverlay& overlay = reg.ctx().get<MainOverlay>();
-
-    auto vBoxView = reg.view<UIRenderTransform, const UITransform, const VBox, const Children>();
-    auto vBoxEntities = std::vector<entt::entity>(vBoxView.begin(), vBoxView.end());
-
-    auto vBoxFunc = [&vBoxView, &vBoxEntities](int32_t start, int32_t end)
-    {
-        for (int32_t i = start; i < end; ++i)
-        {
-            auto [renderTransform, vBox, children] = vBoxView.get<UIRenderTransform, const VBox, const Children>(vBoxEntities[i]);
-
-            const int32_t count = children.children.size();
-            if (count == 0)
-            {
-                continue;
-            }
-
-            const float fCount = static_cast<float>(count);
-            const float offsetSize = vBox.offset.z + vBox.offset.w;
-            const float spacingSize = (vBox.spacing * (fCount - 1.0f)) + offsetSize;
-            const float equalVSize = (renderTransform.size.y - spacingSize) / fCount;
-
-            float totalChildrenHeight = 0.0f;
-            if (vBox.controlVSize)
-            {
-                totalChildrenHeight = renderTransform.size.y - offsetSize;
-            }
-            else
-            {
-                for (entt::entity child : children.children)
-                {
-                    totalChildrenHeight += vBoxView.get<const UIRenderTransform>(child).size.y;
-                }
-                totalChildrenHeight += vBox.spacing * (fCount - 1.0f);
-            }
-
-            float alignmentOffset = 0.0f;
-            const float availableHeight = renderTransform.size.y - offsetSize;
-            const float remainingSpace = availableHeight - totalChildrenHeight;
-
-            switch (vBox.childStart)
-            {
-            case ChildStart::Middle:
-                alignmentOffset = remainingSpace * 0.5f;
-                break;
-            case ChildStart::End:
-                alignmentOffset = remainingSpace;
-                break;
-            case ChildStart::Start:
-            default:
-                alignmentOffset = 0.0f;
-                break;
-            }
-
-            float cursorY = renderTransform.position.y + vBox.offset.z + alignmentOffset;
-
-            for (entt::entity child : children.children)
-            {
-                UIRenderTransform& childTransform = vBoxView.get<UIRenderTransform>(child);
-
-                float tempCursorY = cursorY;
-
-                if (vBox.controlVSize)
-                {
-                    childTransform.size.y = equalVSize;
-                    tempCursorY += equalVSize + vBox.spacing;
-                }
-                else
-                {
-                    tempCursorY += childTransform.size.y + vBox.spacing;
-                }
-
-                if (vBox.controlHSize)
-                {
-                    childTransform.size.x = renderTransform.size.x - (vBox.offset.x + vBox.offset.y);
-                }
-
-                childTransform.position.x = renderTransform.position.x + vBox.offset.x;
-                childTransform.position.y = cursorY;
-
-                cursorY = tempCursorY;
-            }
-        }
-    };
-    ts.ParallelForSync(vBoxEntities.size(), vBoxFunc);
-
-    auto hBoxView = reg.view<UIRenderTransform, const UITransform, const HBox, const Children>();
-    auto hBoxEntities = std::vector<entt::entity>(hBoxView.begin(), hBoxView.end());
-
-    auto hBoxFunc = [&hBoxView, &hBoxEntities](int32_t start, int32_t end)
-    {
-        for (int32_t i = start; i < end; ++i)
-        {
-            auto [renderTransform, hBox, children] = hBoxView.get<UIRenderTransform, const HBox, const Children>(hBoxEntities[i]);
-
-            const int32_t count = children.children.size();
-            if (count == 0)
-            {
-                continue;
-            }
-
-            const float fCount = static_cast<float>(count);
-            const float offsetSize = hBox.offset.x + hBox.offset.y;
-            const float spacingSize = (hBox.spacing * (fCount - 1.0f)) + offsetSize;
-            const float equalHSize = (renderTransform.size.x - spacingSize) / fCount;
-
-            float totalChildrenWidth = 0.0f;
-            if (hBox.controlHSize)
-            {
-                totalChildrenWidth = renderTransform.size.x - offsetSize;
-            }
-            else
-            {
-                for (entt::entity child : children.children)
-                {
-                    totalChildrenWidth += hBoxView.get<const UIRenderTransform>(child).size.x;
-                }
-                totalChildrenWidth += hBox.spacing * (fCount - 1.0f);
-            }
-
-            float alignmentOffset = 0.0f;
-            const float availableWidth = renderTransform.size.x - offsetSize;
-            const float remainingSpace = availableWidth - totalChildrenWidth;
-
-            switch (hBox.childStart)
-            {
-            case ChildStart::Middle:
-                alignmentOffset = remainingSpace * 0.5f;
-                break;
-            case ChildStart::End:
-                alignmentOffset = remainingSpace;
-                break;
-            case ChildStart::Start:
-            default:
-                alignmentOffset = 0.0f;
-                break;
-            }
-
-            float cursorX = renderTransform.position.x + hBox.offset.y + alignmentOffset;
-
-            for (entt::entity child : children.children)
-            {
-                UIRenderTransform& childTransform = hBoxView.get<UIRenderTransform>(child);
-
-                float tempCursorX = cursorX;
-
-                if (hBox.controlHSize)
-                {
-                    childTransform.size.x = equalHSize;
-                    tempCursorX += equalHSize + hBox.spacing;
-                }
-                else
-                {
-                    tempCursorX += childTransform.size.x + hBox.spacing;
-                }
-
-                if (hBox.controlVSize)
-                {
-                    childTransform.size.y = renderTransform.size.y - (hBox.offset.z + hBox.offset.w);
-                }
-
-                childTransform.position.x = cursorX;
-                childTransform.position.y = renderTransform.position.y + hBox.offset.z;
-
-                cursorX = tempCursorX;
-            }
-        }
-    };
-    ts.ParallelForSync(hBoxEntities.size(), hBoxFunc);
+    reg.sort<UIRenderTransform>([](const UIRenderTransform& lhs, const UIRenderTransform& rhs)
+                                { return lhs.renderOrder < rhs.renderOrder; });
 }
 
 inline void UpdateInteraction(entt::registry& reg)
@@ -362,7 +347,7 @@ inline void UpdateInteraction(entt::registry& reg)
 
     entt::entity hovered = entt::null;
 
-    auto view = reg.view<const UIRenderOrder, const UIEventStyle>();
+    auto view = reg.view<const UIRenderTransform, const UIEventStyle>();
     auto entities = std::vector<entt::entity>(view.begin(), view.end());
     for (int32_t i = entities.size() - 1; i >= 0; --i)
     {
@@ -494,31 +479,19 @@ void UISystem::Run(Registry* registry, CommandBuffer& cmd)
     reg.view<const TextRenderer>(entt::exclude<TextRendererDetails>).each(textDetailsSetup);
 
     // Adding missing UI components
-    auto& anchorStorage = reg.storage<UIAnchor>();
-    auto& pivotStorage = reg.storage<UIPivot>();
     auto& renderTransformStorage = reg.storage<UIRenderTransform>();
-    auto& renderOrderStorage = reg.storage<UIRenderOrder>();
+    auto& visibilityStorage = reg.storage<UIVisiblity>();
 
     auto layoutFunc = [&](entt::entity entity, const UITransform& transform)
     {
-        if (!anchorStorage.contains(entity))
-        {
-            anchorStorage.emplace(entity);
-        }
-
-        if (!pivotStorage.contains(entity))
-        {
-            pivotStorage.emplace(entity);
-        }
-
         if (!renderTransformStorage.contains(entity))
         {
             renderTransformStorage.emplace(entity);
         }
 
-        if (!renderOrderStorage.contains(entity))
+        if (!visibilityStorage.contains(entity))
         {
-            renderOrderStorage.emplace(entity);
+            visibilityStorage.emplace(entity);
         }
     };
     reg.view<const UITransform>().each(layoutFunc);
@@ -534,8 +507,8 @@ void UISystem::Run(Registry* registry, CommandBuffer& cmd)
         ScaleUI(scaler, overlay, canvas, cachedWidth, cachedHeight);
     }
 
-    ProcessUITransform(reg);
-    ProcessLayoutBox(reg);
+    ProcessUIVisibility(reg);
+    UpdateLayoutAndTransforms(reg);
     UpdateInteraction(reg);
 }
 

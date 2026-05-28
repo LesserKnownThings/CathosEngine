@@ -10,5 +10,5 @@ class UIPipeline : public RenderPipeline
     void Initialize() override;
 
   private:
-    const std::string shaderPath = "Data/Engine/Shaders/UI";
+    const std::string shaderPath = "Assets/Engine/Shaders/UI";
 };

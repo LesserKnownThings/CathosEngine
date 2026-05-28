@@ -81,6 +81,7 @@ bool Engine::Initialize(int argc, const char* argv[])
         im.PollInput();
 
 #if !EDITOR
+        defaultWorld->FrameStart();
         defaultWorld->Run();
 
         while (accumulator >= SIM_STEP)
@@ -98,6 +99,7 @@ bool Engine::Initialize(int argc, const char* argv[])
 
         float alpha = static_cast<float>(accumulator) / static_cast<float>(SIM_STEP);
         defaultWorld->Render(alpha);
+        defaultWorld->FrameEnd();
 
         gcDelay += deltaTime;
         if (gcDelay >= GC_DELAY)

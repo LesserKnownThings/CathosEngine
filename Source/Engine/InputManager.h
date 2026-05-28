@@ -22,6 +22,7 @@ class InputManager
     CallMe::Delegate<void()> onCloseGame;
     CallMe::Event<void()> onWindowResize;
     CallMe::Event<void()> onWindowMinimized;
+    CallMe::Event<void()> onHotReload;
 
     CallMe::Event<void(uint32_t)> onMouseClicked;
     CallMe::Event<void(uint32_t)> onMouseReleased;
@@ -54,6 +55,6 @@ class InputManager
     // WASD or screen border
     glm::vec2 movementAxis;
 
-    std::vector<uint32_t> storedKeys;
+    uint32_t keyState = 0;
     uint32_t cachedMouseButton = 0;
 };

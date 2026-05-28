@@ -13,5 +13,5 @@ class PBRPipeline : public RenderPipeline
     void Initialize() override;
 
   private:
-    const std::string shaderPath = "Data/Engine/Shaders/PBR";
+    const std::string shaderPath = "Assets/Engine/Shaders/PBR";
 };

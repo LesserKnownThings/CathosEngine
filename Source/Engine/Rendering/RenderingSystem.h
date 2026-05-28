@@ -118,7 +118,7 @@ class RenderingSystem
     AllocatedBuffer CreateBuffer(int32_t size, VkBufferUsageFlags bufferFlags, VmaMemoryUsage memoryFlags, VmaAllocationCreateFlags allocationFlags);
 
     void DestroyBuffer(AllocatedBuffer buffer);
-    void DestroyTexture(AllocatedTexture texture);
+    void DestroyTexture(AllocatedTexture texture, uint32_t textureIndex);
     void DestroyDescriptorSetLayout(const VkDescriptorSetLayout layout);
 
     template <typename T>

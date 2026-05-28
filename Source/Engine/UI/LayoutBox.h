@@ -5,9 +5,9 @@
 
 enum class ChildStart : uint8_t
 {
-    Start,
-    Middle,
-    End,
+    Start = 0,
+    Middle = 1,
+    End = 2,
 };
 
 struct VBox

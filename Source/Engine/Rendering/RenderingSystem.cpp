@@ -23,6 +23,7 @@
 #include "UI/UIMaterial.h"
 #include "UI/UIMeshData.h"
 #include "UI/UITransform.h"
+#include "UI/UIVisibility.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_video.h>
@@ -170,13 +171,9 @@ void RenderingSystem::DestroyBuffer(AllocatedBuffer buffer)
     buffersPendingDelete.push_back(buffer);
 }
 
-void RenderingSystem::DestroyTexture(AllocatedTexture texture)
+void RenderingSystem::DestroyTexture(AllocatedTexture texture, uint32_t textureIndex)
 {
-    // TODO like for the creation, this needs to live in a custom type of texture
-    // if (texture.stagingBuffer != nullptr)
-    // {
-    //     DestroyBuffer(*texture.stagingBuffer);
-    // }
+    ReturnTextureIndex(textureIndex);
     imagesPendingDelete.push_back(texture);
 }
 
@@ -349,14 +346,44 @@ void RenderingSystem::RenderUI(Registry* registry)
     static std::vector<UIInstanceData> gInstances(INITIAL_UI_INSTANCES);
 
     // TODO switch to groups instead of view?
-    auto imageView = reg.view<const UIMaterial, const UITransform, const UIRenderTransform, const UIRenderOrder>(entt::exclude<TextRenderer, NineSlice>);
-    const auto imageEntities = std::vector<entt::entity>(imageView.begin(), imageView.end());
+    auto imageView = reg.view<const UIMaterial, const UITransform, const UIRenderTransform, const UIVisiblity>(entt::exclude<TextRenderer, NineSlice>);
+    std::vector<entt::entity> imageEntities;
+    imageEntities.reserve(imageView.size_hint());
 
-    auto sliceView = reg.view<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform, const UIRenderOrder>(entt::exclude<TextRenderer>);
-    const auto sliceEntities = std::vector<entt::entity>(sliceView.begin(), sliceView.end());
+    for (auto entity : imageView)
+    {
+        const auto& visbility = imageView.get<const UIVisiblity>(entity);
+        if (visbility.isVisible)
+        {
+            imageEntities.push_back(entity);
+        }
+    }
 
-    auto textView = reg.view<const TextRenderer, const TextRendererDetails, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>();
-    const auto textEntities = std::vector<entt::entity>(textView.begin(), textView.end());
+    auto sliceView = reg.view<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform, const UIVisiblity>(entt::exclude<TextRenderer>);
+    std::vector<entt::entity> sliceEntities;
+    sliceEntities.reserve(sliceView.size_hint());
+
+    for (auto entity : sliceView)
+    {
+        const auto& visbility = sliceView.get<const UIVisiblity>(entity);
+        if (visbility.isVisible)
+        {
+            sliceEntities.push_back(entity);
+        }
+    }
+
+    auto textView = reg.view<const TextRenderer, const TextRendererDetails, const TextStyle, const UITransform, const UIRenderTransform, const UIVisiblity>();
+    std::vector<entt::entity> textEntities;
+    textEntities.reserve(textView.size_hint());
+
+    for (auto entity : textView)
+    {
+        const auto& visbility = textView.get<const UIVisiblity>(entity);
+        if (visbility.isVisible)
+        {
+            textEntities.push_back(entity);
+        }
+    }
 
     const int32_t imageStorageSize = imageEntities.size();
     const int32_t sliceStorageSize = sliceEntities.size();
@@ -377,18 +404,18 @@ void RenderingSystem::RenderUI(Registry* registry)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            auto [material, uiTransform, worldTransform, renderOrder] = imageView.get<const UIMaterial, const UITransform, const UIRenderTransform, const UIRenderOrder>(imageEntities[i]);
+            auto [material, uiTransform, renderTransform] = imageView.get<const UIMaterial, const UITransform, const UIRenderTransform>(imageEntities[i]);
 
             gInstances[i] = UIInstanceData{
-                worldTransform.position,
-                worldTransform.size,
+                renderTransform.position,
+                renderTransform.size,
                 material.uv,
                 material.color,
                 material.textureHandle->textureIndex
             };
 
             renderItems[i] = UIRenderItem{
-                sortKey(renderOrder.renderOrder, PipelineType::UI),
+                sortKey(renderTransform.renderOrder, PipelineType::UI),
                 static_cast<uint32_t>(i),
                 1,
                 0.0f,
@@ -408,15 +435,15 @@ void RenderingSystem::RenderUI(Registry* registry)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            auto [material, slice, uiTransform, worldTransform, renderOrder] = sliceView.get<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform, const UIRenderOrder>(sliceEntities[i]);
+            auto [material, slice, uiTransform, renderTransform] = sliceView.get<const UIMaterial, const NineSlice, UITransform, const UIRenderTransform>(sliceEntities[i]);
 
             const float imgW = material.textureHandle->data.width;
             const float imgH = material.textureHandle->data.height;
 
-            const float dstX = worldTransform.position.x;
-            const float dstY = worldTransform.position.y;
-            const float dstW = worldTransform.size.x;
-            const float dstH = worldTransform.size.y;
+            const float dstX = renderTransform.position.x;
+            const float dstY = renderTransform.position.y;
+            const float dstW = renderTransform.size.x;
+            const float dstH = renderTransform.size.y;
 
             // Proportional downscaling for borders
             // Since slices can become bigger than the borders I need to make sure it doesn't go negative
@@ -498,7 +525,7 @@ void RenderingSystem::RenderUI(Registry* registry)
             }
 
             renderItems[imageStorageSize + i] = UIRenderItem{
-                sortKey(renderOrder.renderOrder, PipelineType::UI),
+                sortKey(renderTransform.renderOrder, PipelineType::UI),
                 static_cast<uint32_t>(baseIndex),
                 9,
                 0.0f,
@@ -594,16 +621,16 @@ void RenderingSystem::RenderUI(Registry* registry)
     {
         for (int32_t i = start; i < end; ++i)
         {
-            auto [textRenderer, textDetails, textStyle, uiTransform, worldTransform, renderOrder] = textView.get<const TextRenderer, const TextRendererDetails, const TextStyle, const UITransform, const UIRenderTransform, const UIRenderOrder>(textEntities[i]);
+            auto [textRenderer, textDetails, textStyle, uiTransform, renderTransform] = textView.get<const TextRenderer, const TextRendererDetails, const TextStyle, const UITransform, const UIRenderTransform>(textEntities[i]);
 
             const Font& font = textRenderer.font;
 
             const float spaceWidth = font.mappedGlyphs.at(' ').advance * textRenderer.fontSize;
 
-            glm::vec2 cursor = worldTransform.position;
+            glm::vec2 cursor = renderTransform.position;
             const float lineWidth = glypsTotalWidth[i];
 
-            const float maxWidth = textStyle.wrapText ? worldTransform.size.x : std::numeric_limits<float>::max();
+            const float maxWidth = textStyle.wrapText ? renderTransform.size.x : std::numeric_limits<float>::max();
 
             const float fontScale = textRenderer.fontSize / font.metadata.emSize;
             const float scaledAscent = font.metadata.ascent * fontScale;
@@ -638,15 +665,15 @@ void RenderingSystem::RenderUI(Registry* registry)
             switch (textStyle.vertical)
             {
             case TextVAlign::Top:
-                cursor.y = worldTransform.position.y + scaledAscent;
+                cursor.y = renderTransform.position.y + scaledAscent;
                 break;
 
             case TextVAlign::Middle:
-                cursor.y = worldTransform.position.y + (worldTransform.size.y * 0.5f) + (scaledAscent * 0.5f) - (heightOffset * 0.5f);
+                cursor.y = renderTransform.position.y + (renderTransform.size.y * 0.5f) + (scaledAscent * 0.5f) - (heightOffset * 0.5f);
                 break;
 
             case TextVAlign::Bottom:
-                cursor.y = worldTransform.position.y + worldTransform.size.y - heightOffset;
+                cursor.y = renderTransform.position.y + renderTransform.size.y - heightOffset;
                 break;
             }
 
@@ -667,11 +694,11 @@ void RenderingSystem::RenderUI(Registry* registry)
                     break;
 
                 case TextHAlign::Center:
-                    horizontalOffset = (worldTransform.size.x - line.width) * 0.5f;
+                    horizontalOffset = (renderTransform.size.x - line.width) * 0.5f;
                     break;
 
                 case TextHAlign::Right:
-                    horizontalOffset = worldTransform.size.x - line.width;
+                    horizontalOffset = renderTransform.size.x - line.width;
                     break;
 
                 case TextHAlign::Justified:
@@ -753,68 +780,9 @@ void RenderingSystem::RenderUI(Registry* registry)
                 lineCursor.y += lineAdvance;
             }
 
-            // for (int32_t l = 0; l < textRenderer.text.size(); ++l)
-            // {
-            //     const char letter = textRenderer.text[l];
-
-            //     auto glyphIT = font.mappedGlyphs.find(letter);
-            //     if (glyphIT == font.mappedGlyphs.end())
-            //         continue;
-
-            //     const float advance = glyphIT->second.advance * textRenderer.fontSize;
-
-            //     if (l > 0)
-            //     {
-            //         auto kerningIT = font.mappedKerningPairs.find(std::pair(textRenderer.text[l - 1], letter));
-            //         if (kerningIT != font.mappedKerningPairs.end())
-            //         {
-            //             cursor.x += kerningIT->second;
-            //         }
-            //     }
-
-            //     if (textStyle.wrapText)
-            //     {
-            //         if (cursor.x < worldTransform.position.x)
-            //         {
-            //         }
-            //     }
-
-            //     glm::vec2 pos = {
-            //         cursor.x + (glyphIT->second.planeLeft * textRenderer.fontSize),
-            //         cursor.y - (glyphIT->second.planeTop * textRenderer.fontSize)
-            //     };
-
-            //     glm::vec2 size = {
-            //         (glyphIT->second.planeRight - glyphIT->second.planeLeft) * textRenderer.fontSize,
-            //         (glyphIT->second.planeTop - glyphIT->second.planeBottom) * textRenderer.fontSize
-            //     };
-
-            //     glm::vec4 uvRect = {
-            //         glyphIT->second.uvLeft,
-            //         glyphIT->second.uvBottom,
-            //         glyphIT->second.uvRight,
-            //         glyphIT->second.uvTop
-            //     };
-
-            //     gInstances[renderItemsOffset + offsets[i] + l] = UIInstanceData{
-            //         pos,
-            //         size,
-            //         uvRect,
-            //         textRenderer.color,
-            //         font.textureIndex
-            //     };
-
-            //     textInstances[offsets[i] + l] = TextInstance{
-            //         textRenderer.font.handle().get(),
-            //         textEntities[i],
-            //     };
-
-            //     cursor.x += advance;
-            // }
-
             const int32_t instanceStart = renderItemsOffset + offsets[i];
-            renderItems[imageStorageSize + sliceStorageSize + offsets[i]] = UIRenderItem{
-                sortKey(renderOrder.renderOrder, PipelineType::Text),
+            renderItems[imageStorageSize + sliceStorageSize + i] = UIRenderItem{
+                sortKey(renderTransform.renderOrder, PipelineType::Text),
                 static_cast<uint32_t>(instanceStart),
                 static_cast<uint32_t>(textRenderer.text.size()),
                 font.pixelRange,

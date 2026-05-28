@@ -27,6 +27,7 @@
     "freetype",
     "nlohmann-json",
     "tinyfiledialogs",
-    "msdfgen"
+    "msdfgen",
+    "lua"
   ]
 }

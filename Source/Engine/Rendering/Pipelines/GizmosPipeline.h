@@ -13,5 +13,5 @@ class GizmosPipeline : public RenderPipeline
     void Initialize() override;
 
   private:
-    const std::string shaderPath = "Data/Engine/Shaders/Gizmos";
+    const std::string shaderPath = "Assets/Engine/Shaders/Gizmos";
 };

@@ -12,6 +12,6 @@ class MSDFTextPipeline : public RenderPipeline
     void Initialize() override;
 
   private:
-    const std::string vertexPath = "Data/Engine/Shaders/UI";
-    const std::string fragmentPath = "Data/Engine/Shaders/MSDFText";
+    const std::string vertexPath = "Assets/Engine/Shaders/UI";
+    const std::string fragmentPath = "Assets/Engine/Shaders/MSDFText";
 };

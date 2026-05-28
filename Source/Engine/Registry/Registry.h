@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Registry/Factories.h"
 #include <entt/entt.hpp>
 
 struct AssetServer;
@@ -12,6 +11,23 @@ class Registry
     Registry();
 
     void GCPass();
+
+    entt::entity CreateEntity()
+    {
+        return registry.create();
+    }
+
+    template <typename T>
+    T& Get(entt::entity entity)
+    {
+        return registry.get<T>(entity);
+    }
+
+    template <typename T>
+    const T& Get(entt::entity entity) const
+    {
+        return registry.get<T>(entity);
+    }
 
     template <typename T>
     T& AddResource(const T& res)
@@ -47,6 +63,5 @@ class Registry
     entt::registry& Get() { return registry; }
 
   private:
-    entt::registry registry;
-    Factories factories{};
+    entt::registry registry{};
 };

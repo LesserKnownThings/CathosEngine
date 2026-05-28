@@ -10,17 +10,17 @@ constexpr int32_t MAX_RENDER_GLYPSH = 10000;
 
 enum class TextHAlign : uint8_t
 {
-    Left,
-    Center,
-    Right,
-    Justified
+    Left = 0,
+    Center = 1,
+    Right = 2,
+    Justified = 3
 };
 
 enum class TextVAlign : uint8_t
 {
-    Top,
-    Middle,
-    Bottom
+    Top = 0,
+    Middle = 1,
+    Bottom = 2
 };
 
 struct TextRenderer

@@ -10,7 +10,7 @@
 
 Font::~Font()
 {
-    RenderingSystem::Get().DestroyTexture(atlasTexture);
+    RenderingSystem::Get().DestroyTexture(atlasTexture, textureIndex);
 }
 
 Font::Font(const AssetPath& path)

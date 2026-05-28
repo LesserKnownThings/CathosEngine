@@ -5,7 +5,7 @@
 
 Texture2D::~Texture2D()
 {
-    RenderingSystem::Get().DestroyTexture(renderTexture);
+    RenderingSystem::Get().DestroyTexture(renderTexture, textureIndex);
 }
 
 Texture2D::Texture2D(const AssetPath& path)

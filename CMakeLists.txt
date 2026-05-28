@@ -32,7 +32,10 @@ find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(Tracy REQUIRED)
 find_package(FreeType REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED) # Not sure if I'm gonna use json??
+
+include(FindLua)
+find_package(Lua REQUIRED)
 ###############
 
 add_executable(CathosEngine ${GLOBAL_SOURCES})
@@ -57,6 +60,9 @@ if (EDITOR)
 else()
     target_compile_definitions(CathosEngine PUBLIC EDITOR=0)
 endif()
+
+target_link_libraries(CathosEngine PRIVATE ${LUA_LIBRARIES})
+target_include_directories(CathosEngine PRIVATE ${LUA_INCLUDE_DIR})
 
 target_link_libraries(CathosEngine
 PRIVATE

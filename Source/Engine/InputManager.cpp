@@ -19,8 +19,6 @@ InputManager& InputManager::Get()
 
 InputManager::InputManager()
 {
-    storedKeys.resize(SDL_SCANCODE_COUNT);
-
     // TODO enable this once I have custom cursor rendering
     //  SDL_SetWindowRelativeMouseMode(RenderingSystem::Get().GetWindow(), true);
 }
@@ -57,18 +55,15 @@ void InputManager::PollInput()
         {
             onWindowMinimized.raise();
         }
+
+        if (e.key.down)
+        {
+        }
         else
         {
-            if (e.key.down)
+            if (e.key.scancode == SDL_SCANCODE_F5)
             {
-                if (e.key.repeat == 0 && e.key.key < SDL_SCANCODE_COUNT)
-                {
-                    storedKeys[e.key.key] = 1;
-                }
-            }
-            else if (!e.key.down && e.key.key < SDL_SCANCODE_COUNT)
-            {
-                storedKeys[e.key.key] = 0;
+                onHotReload.raise();
             }
         }
 
@@ -159,9 +154,13 @@ void InputManager::ProcessButton(uint8_t button, uint32_t state)
 
 void InputManager::ProcessKeys()
 {
-    movementAxis.y = storedKeys[SDLK_W] + storedKeys[SDLK_S] * -1.0f;
-    movementAxis.x = storedKeys[SDLK_D] + storedKeys[SDLK_A] * -1.0f;
+    // movementAxis.y = storedKeys[SDLK_W] + storedKeys[SDLK_S] * -1.0f;
+    // movementAxis.x = storedKeys[SDLK_D] + storedKeys[SDLK_A] * -1.0f;
 
+    int numKeys;
+    const bool* keyState = SDL_GetKeyboardState(&numKeys);
+
+    // TODO move the mouse to a different function
     float deltaX, deltaY;
     SDL_GetRelativeMouseState(&deltaX, &deltaY);
 

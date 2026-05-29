@@ -669,7 +669,7 @@ void RenderingSystem::RenderUI(Registry* registry)
                 break;
 
             case TextVAlign::Middle:
-                cursor.y = renderTransform.position.y + (renderTransform.size.y * 0.5f) + (scaledAscent * 0.5f) - (heightOffset * 0.5f);
+                cursor.y = renderTransform.position.y + (renderTransform.size.y * 0.5f) + (scaledAscent * 0.5f) + (scaledDescent * 0.5f) - (heightOffset * 0.5f);
                 break;
 
             case TextVAlign::Bottom:

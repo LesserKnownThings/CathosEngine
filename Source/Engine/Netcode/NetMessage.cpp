@@ -1,4 +1,4 @@
-#include "Message.h"
+#include "NetMessage.h"
 #include "fpm/fixed.hpp"
 #include <cstdint>
 #include <cstring>
@@ -66,7 +66,7 @@ inline std::string UnpackString(const uint8_t* buffer, int32_t& offset)
     return str;
 }
 
-void MessagePacker::PackMessage(const Message& message, uint8_t*& outBuffer, int32_t& outSize)
+void MessagePacker::PackMessage(const NetMessage& message, uint8_t*& outBuffer, int32_t& outSize)
 {
     static uint8_t buffer[512];
     int32_t offset = 0;
@@ -134,9 +134,9 @@ void MessagePacker::PackMessage(const Message& message, uint8_t*& outBuffer, int
     outSize = offset;
 }
 
-Message MessagePacker::UnpackMessage(uint8_t* buffer)
+NetMessage MessagePacker::UnpackMessage(uint8_t* buffer)
 {
-    Message cmd{};
+    NetMessage cmd{};
     int32_t offset = 0;
 
     cmd.tick = ReadU32LE(buffer);

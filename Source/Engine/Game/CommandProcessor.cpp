@@ -1,6 +1,6 @@
 #include "CommandProcessor.h"
 
-#include "Netcode/Message.h"
+#include "Netcode/NetMessage.h"
 #include "Netcode/NetworkManager.h"
 #include <algorithm>
 #include <cstdint>
@@ -14,7 +14,7 @@ CommandProcessor& CommandProcessor::Get()
     return instance;
 }
 
-void CommandProcessor::AddNetworkCommand(const Message& cmd)
+void CommandProcessor::AddNetworkCommand(const NetMessage& cmd)
 {
     uint32_t scheduleTick = cmd.tick + INPUT_DELAY;
     cmds[scheduleTick].push_back(cmd);
@@ -26,20 +26,20 @@ void CommandProcessor::AddNetworkCommand(const Message& cmd)
     NetworkManager::Get().SendMessage(data, dataSize);
 }
 
-void CommandProcessor::AddCommand(const Message& cmd)
+void CommandProcessor::AddCommand(const NetMessage& cmd)
 {
     uint32_t scheduleTick = cmd.tick + INPUT_DELAY;
     cmds[scheduleTick].push_back(cmd);
 }
 
-std::vector<Message> CommandProcessor::GetCommandsForTick(uint32_t tick)
+std::vector<NetMessage> CommandProcessor::GetCommandsForTick(uint32_t tick)
 {
     if (cmds.find(tick) == cmds.end())
         return {};
 
-    std::vector<Message> outCmds = cmds[tick];
+    std::vector<NetMessage> outCmds = cmds[tick];
 
-    std::sort(outCmds.begin(), outCmds.end(), [](const Message& a, const Message& b)
+    std::sort(outCmds.begin(), outCmds.end(), [](const NetMessage& a, const NetMessage& b)
               { return a.player < b.player; });
 
     cmds.erase(tick);

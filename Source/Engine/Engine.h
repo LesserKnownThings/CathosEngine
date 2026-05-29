@@ -17,6 +17,8 @@ class Engine
     bool Initialize(int argc, const char* argv[]);
     void Shutdown();
 
+    void CloseGame();
+
   private:
     World* defaultWorld = nullptr;
 

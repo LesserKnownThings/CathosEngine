@@ -4,18 +4,18 @@
 #include <map>
 #include <vector>
 
-struct Message;
+struct NetMessage;
 
 class CommandProcessor
 {
   public:
     static CommandProcessor& Get();
 
-    void AddNetworkCommand(const Message& cmd);
+    void AddNetworkCommand(const NetMessage& cmd);
 
-    void AddCommand(const Message& cmd);
-    std::vector<Message> GetCommandsForTick(uint32_t tick);
+    void AddCommand(const NetMessage& cmd);
+    std::vector<NetMessage> GetCommandsForTick(uint32_t tick);
 
   private:
-    std::map<std::uint32_t, std::vector<Message>> cmds;
+    std::map<std::uint32_t, std::vector<NetMessage>> cmds;
 };

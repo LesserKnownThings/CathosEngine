@@ -3,12 +3,10 @@
 #include "Debug/DebugSystem.h"
 #include "InputManager.h"
 #include "Math/TransformMath.hpp"
-#include "Netcode/Message.h"
 #include "Registry/Registry.h"
 #include <cstdint>
 #include <entt/entity/fwd.hpp>
 #include <entt/entt.hpp>
-#include <format>
 #include <glm/ext/quaternion_geometric.hpp>
 #include <glm/geometric.hpp>
 #include <string>
@@ -28,7 +26,7 @@ Player::Player(Registry* inRegistry)
 
 void Player::OnReceiveMessage(uint8_t* data)
 {
-    Message msg = MessagePacker::UnpackMessage(data);
+    NetMessage msg = MessagePacker::UnpackMessage(data);
 
     switch (msg.type)
     {

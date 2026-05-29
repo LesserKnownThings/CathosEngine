@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Netcode/Message.h"
+#include "Netcode/NetMessage.h"
 #include <cstdint>
 #include <glm/fwd.hpp>
 #include <vector>
@@ -16,7 +16,7 @@ class Player
     void Run(uint32_t tick);
     void RunSim(uint32_t tick);
 
-    std::vector<Message> pendingCommands;
+    std::vector<NetMessage> pendingCommands;
 
   private:
     void CameraMovement();

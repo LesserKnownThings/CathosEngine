@@ -19,7 +19,7 @@ struct MaterialMesh3DHandle
     {
     }
 
-    MaterialMesh3DHandle(entt::resource<Texture2D> texture, const glm::vec4& inColor = Color::WHITE)
+    MaterialMesh3DHandle(entt::resource<Texture2D> texture, const glm::vec4& inColor = Color::White)
         : textureHandle(texture)
     {
     }

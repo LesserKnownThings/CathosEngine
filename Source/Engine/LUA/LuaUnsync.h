@@ -1,13 +1,11 @@
 #pragma once
 
-#include <string>
+#include <entt/fwd.hpp>
 
-class Registry;
-
-constexpr std::string LUA_WIDGET_TABLE = "UI_Widget";
+struct lua_State;
 
 class LuaUnsync
 {
   public:
-    static void InitUI(Registry* registry);
+    static void DispatchClick(lua_State* l, entt::entity pressedEntity);
 };

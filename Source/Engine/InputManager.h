@@ -2,7 +2,6 @@
 
 #include "Callme/CallMe.Event.h"
 #include "Callme/CallMe.h"
-#include "Netcode/Message.h"
 #include <cstdint>
 #include <glm/ext/vector_float2.hpp>
 #include <vector>
@@ -44,8 +43,6 @@ class InputManager
 
     void ProcessKeys();
     void ProcessButton(uint8_t button, uint32_t state);
-
-    std::vector<Message> localCommands;
 
     std::vector<uint32_t> mouseState;
 

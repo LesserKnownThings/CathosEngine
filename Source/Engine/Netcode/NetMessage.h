@@ -66,7 +66,7 @@ struct ChatMsg
     std::string message;
 };
 
-struct Message
+struct NetMessage
 {
     uint32_t tick;
     uint8_t player;
@@ -118,6 +118,6 @@ struct Message
 class MessagePacker
 {
   public:
-    static void PackMessage(const Message& message, uint8_t*& outBuffer, int32_t& outSize);
-    static Message UnpackMessage(uint8_t* data);
+    static void PackMessage(const NetMessage& message, uint8_t*& outBuffer, int32_t& outSize);
+    static NetMessage UnpackMessage(uint8_t* data);
 };

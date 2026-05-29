@@ -1,9 +1,11 @@
 #include "UISystem.h"
 #include "Components/Hierarchy.h"
 #include "InputManager.h"
+#include "LUA/LuaUnsync.h"
 #include "Registry/Registry.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/Font.h"
+#include "Resources/LuaResources.h"
 #include "Systems/SystemRegistry.h"
 #include "UI/Button.h"
 #include "UI/Canvas.h"
@@ -159,7 +161,7 @@ inline void ComputeSingleUITransform(entt::registry& reg, entt::entity entity, e
     if (stretchY)
     {
         finalSize.y = anchorRectSize.y - transform.position.y - transform.size.y;
-        finalPosition.y = transform.position.x + anchorMin.y;
+        finalPosition.y = transform.position.y + anchorMin.y;
     }
 
     renderTransform.position = finalPosition;
@@ -336,6 +338,7 @@ inline void UpdateInteraction(entt::registry& reg)
 {
     const CanvasScaler& scaler = reg.ctx().get<CanvasScaler>();
     UIEvent& event = reg.ctx().get<UIEvent>();
+    const LuaState& lua = reg.ctx().get<LuaState>();
 
     InputManager& im = InputManager::Get();
     const glm::vec2& mousePos = im.GetMousePosition() * scaler.GetScreenToCanvasScale();
@@ -382,6 +385,7 @@ inline void UpdateInteraction(entt::registry& reg)
             {
                 auto& button = buttonStorage.get(event.pressed);
                 button.onClick.publish();
+                LuaUnsync::DispatchClick(lua.unsyncState, event.pressed);
             }
         }
 

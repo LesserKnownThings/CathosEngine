@@ -113,3 +113,44 @@ function UI.CreateVBox(data) end
 --         controlHSize = false,
 --         controlVSize = false,
 --     })
+
+--Creates a hierarchy and returns the parent
+--@param buttonData is a table that holds the required button params
+--@param textData is a table that holds the required text params
+--@return entityId of the parent
+function UI.CreateButton(buttonData, textData) end
+
+--Example of CreateButton
+--This is an exmaple with text
+-- UI.CreateButton(
+--             {
+--                 texturePath = nil, --Will load the default white texture
+--                 normal = {1.0, 1.0, 1.0, 1.0},
+--                 hover = {1.0, 1.0, 0.0, 1.0},
+--                 press = {0.0, 1.0, 1.0, 1.0}
+--             },
+--             {
+--                 fontPath = "Assets/Fonts/CauseFont.casset",
+--                 text = "Button",
+--                 fontSize = 35.0,
+--                 textColor = {0.0, 0.0, 0.0, 1.0},
+--                 horizontal = TextHAlign.Center,
+--                 vertical = TextVAlign.Middle
+--             }
+--         )
+
+--This is an example without text
+-- UI.CreateButton(
+--             {
+--                 texturePath = nil, --Will load the default white texture
+--                 normal = {1.0, 1.0, 1.0, 1.0},
+--                 hover = {1.0, 1.0, 0.0, 1.0},
+--                 press = {0.0, 1.0, 1.0, 1.0}
+--             }
+--         )
+
+--The send message has 2 variants, you can send a message with the entity or without so the entity is optional
+--@param entity optional param for the entity Id, some messages don't require an etity to work
+--@param msg a table containing the id of the function and the value
+--The list of UI messages can be found in the Message.h under UIMessages or in the doc
+function UI.SendUIMessage(entity, msg) end

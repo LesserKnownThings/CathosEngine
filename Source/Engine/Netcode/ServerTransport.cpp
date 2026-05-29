@@ -3,7 +3,7 @@
 #include "Connection.h"
 #include "Debug/DebugSystem.h"
 #include "NetCallbacks.h"
-#include "Netcode/Message.h"
+#include "Netcode/NetMessage.h"
 #include <GameNetworkingSockets/steam/isteamnetworkingsockets.h>
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
 #include <cassert>
@@ -83,7 +83,7 @@ void ServerTransport::PollIncomingMessages()
 
     assert(nMessages == 1 && message);
 
-    Message msg = MessagePacker::UnpackMessage(static_cast<uint8_t*>(message->m_pData));
+    NetMessage msg = MessagePacker::UnpackMessage(static_cast<uint8_t*>(message->m_pData));
     if (msg.type == MessageType::Chat)
     {
         ChatMsg& chat = msg.GetChat();
@@ -114,7 +114,7 @@ void ServerTransport::OnConnectionStatusChanged(SteamNetConnectionStatusChangedC
     case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
         if (info->m_eOldState == k_ESteamNetworkingConnectionState_Connected)
         {
-            Message msg{};
+            NetMessage msg{};
             msg.type = MessageType::Chat;
 
             ChatMsg& message = msg.CreateChat();

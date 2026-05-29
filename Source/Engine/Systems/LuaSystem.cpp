@@ -2,6 +2,7 @@
 #include "Components/Hierarchy.h"
 #include "Debug/DebugSystem.h"
 #include "InputManager.h"
+#include "LUA/Message.h"
 #include "Registry/CommandBuffer.h"
 #include "Registry/Registry.h"
 #include "Resources/AssetPath.h"
@@ -10,6 +11,7 @@
 #include "Resources/LuaResources.h"
 #include "Resources/Texture.h"
 #include "Systems/SystemRegistry.h"
+#include "UI/Button.h"
 #include "UI/LayoutBox.h"
 #include "UI/NineSlice.h"
 #include "UI/TextRenderer.h"
@@ -18,12 +20,13 @@
 #include "UI/UIVisibility.h"
 #include "World.h"
 #include <cstdint>
-#include <entt/entity/fwd.hpp>
+#include <entt/core/fwd.hpp>
 #include <filesystem>
 #include <format>
 #include <lauxlib.h>
 #include <lua.h>
 #include <lua.hpp>
+#include <variant>
 
 REGISTER_SYSTEM(LuaSystem, SystemPhase::Simulation, DEPENDENCIES({}), DEPENDENCIES({}), 0);
 
@@ -82,6 +85,54 @@ inline void ParseVec4(lua_State* l, int32_t tableIdx, const char* key, glm::vec4
     }
     lua_pop(l, 1);
 };
+
+int32_t l_SendUIMessage(lua_State* l)
+{
+    CommandBuffer& cmd = World::GetFrameStartCommandBuffer();
+
+    UIMessage msg{};
+
+    int32_t offset = 0;
+
+    if (lua_isinteger(l, 1))
+    {
+        uint32_t entityId = static_cast<uint32_t>(luaL_checkinteger(l, 1));
+        msg.entity = static_cast<entt::entity>(entityId);
+        offset++;
+    }
+
+    if (!lua_istable(l, offset))
+    {
+        luaL_error(l, "Expected a table");
+    }
+
+    lua_getfield(l, offset, "id");
+    msg.id = entt::hashed_string::value(lua_tostring(l, -1));
+    lua_pop(l, 1);
+
+    lua_getfield(l, offset, "value");
+    if (lua_isnil(l, -1))
+    {
+        msg.payload = std::monostate{};
+    }
+    else if (lua_isboolean(l, -1))
+    {
+        msg.payload = static_cast<bool>(lua_toboolean(l, -1));
+    }
+    else if (lua_isnumber(l, -1))
+    {
+        msg.payload = static_cast<float>(lua_tonumber(l, -1));
+    }
+    else if (lua_isinteger(l, -1))
+    {
+        msg.payload = static_cast<int32_t>(lua_tointeger(l, -1));
+    }
+
+    auto instance = cmd.Create();
+    cmd.AddComponent(instance, msg);
+
+    return 0;
+}
 
 int32_t l_ExecuteUIScript(lua_State* l)
 {
@@ -426,6 +477,79 @@ int32_t l_CreateVBox(lua_State* l)
     return 1;
 }
 
+// This function will create a hierarchy and return the parent entity
+int32_t l_CreateButton(lua_State* l)
+{
+    entt::registry& reg = World::GetRegistry()->Get();
+    AssetServer& as = World::GetAssetServer();
+
+    if (!lua_istable(l, 1))
+    {
+        luaL_error(l, "Expected a table as the first argument");
+    }
+
+    auto mainParent = reg.create();
+    reg.emplace<UITransform>(mainParent);
+    UIMaterial& material = reg.emplace<UIMaterial>(mainParent);
+    Children& children = reg.emplace<Children>(mainParent);
+    reg.emplace<Button>(mainParent);
+
+    lua_getfield(l, 1, "texturePath");
+    const char* optionalTexture = luaL_optstring(l, -1, nullptr);
+    std::string texturePath = optionalTexture == nullptr ? "Assets/Engine/Textures/base_albedo.png" : optionalTexture;
+    lua_pop(l, 1);
+
+    UIEventStyle& eventStyle = reg.emplace<UIEventStyle>(mainParent);
+    ParseVec4(l, 1, "normal", eventStyle.normal);
+    ParseVec4(l, 1, "hover", eventStyle.hover);
+    ParseVec4(l, 1, "press", eventStyle.press);
+
+    material.textureHandle = as.Load<Texture2D>(AssetPath{ texturePath });
+    material.color = eventStyle.normal;
+
+    // Only create the text if the user requested it
+    if (!lua_isnoneornil(l, 2))
+    {
+        auto text = reg.create();
+        children.children.push_back(text);
+        reg.emplace<ChildOf>(text, mainParent);
+        reg.emplace<UITransform>(text, UITransform{
+                                           .anchorMin = glm::vec2(0.0f),
+                                           .anchorMax = glm::vec2(1.0f),
+                                       });
+        TextRenderer& tr = reg.emplace<TextRenderer>(text);
+
+        lua_getfield(l, 2, "fontPath");
+        std::string fontPath = lua_tostring(l, -1);
+        lua_pop(l, 1);
+
+        tr.font = as.Load<Font>(AssetPath{ fontPath });
+
+        lua_getfield(l, 2, "text");
+        tr.text = lua_tostring(l, -1);
+        lua_pop(l, 1);
+
+        lua_getfield(l, 2, "fontSize");
+        tr.fontSize = static_cast<float>(lua_tonumber(l, -1));
+        lua_pop(l, 1);
+
+        ParseVec4(l, 2, "textColor", tr.color);
+
+        TextStyle& ts = reg.emplace<TextStyle>(text);
+        lua_getfield(l, 2, "horizontal");
+        ts.horizontal = static_cast<TextHAlign>(lua_tointeger(l, -1));
+        lua_pop(l, 1);
+
+        lua_getfield(l, 2, "vertical");
+        ts.vertical = static_cast<TextVAlign>(lua_tointeger(l, -1));
+        lua_pop(l, 1);
+    }
+
+    auto entityId = static_cast<lua_Integer>(mainParent);
+    lua_pushinteger(l, entityId);
+    return 1;
+}
+
 void LuaSystem::Init(Registry* registry, CommandBuffer& cmd)
 {
     static auto temp = InputManager::Get().onHotReload.subscribe(CallMe::fromMethod<&LuaSystem::HotReload>(this));
@@ -497,44 +621,17 @@ void LuaSystem::Init(Registry* registry, CommandBuffer& cmd)
     lua_pushcfunction(unsync, l_CreateVBox);
     lua_setfield(unsync, -2, "CreateVBox");
 
+    lua_pushcfunction(unsync, l_CreateButton);
+    lua_setfield(unsync, -2, "CreateButton");
+
+    lua_pushcfunction(unsync, l_SendUIMessage);
+    lua_setfield(unsync, -2, "SendUIMessage");
+
     lua_setglobal(unsync, "UI");
-
-    // Registering all UI enums
-    lua_newtable(unsync);
-
-    lua_pushinteger(unsync, 0);
-    lua_setfield(unsync, -2, "Left");
-    lua_pushinteger(unsync, 1);
-    lua_setfield(unsync, -2, "Center");
-    lua_pushinteger(unsync, 2);
-    lua_setfield(unsync, -2, "Right");
-
-    lua_setglobal(unsync, "TextHAlign");
-
-    lua_newtable(unsync);
-
-    lua_pushinteger(unsync, 0);
-    lua_setfield(unsync, -2, "Top");
-    lua_pushinteger(unsync, 1);
-    lua_setfield(unsync, -2, "Middle");
-    lua_pushinteger(unsync, 2);
-    lua_setfield(unsync, -2, "Bottom");
-
-    lua_setglobal(unsync, "TextVAlign");
-
-    lua_newtable(unsync);
-
-    lua_pushinteger(unsync, 0);
-    lua_setfield(unsync, -2, "Visible");
-    lua_pushinteger(unsync, 1);
-    lua_setfield(unsync, -2, "Hidden");
-    lua_pushinteger(unsync, 2);
-    lua_setfield(unsync, -2, "Collapsed");
-
-    lua_setglobal(unsync, "VisibilityMode");
 
     std::filesystem::path uiRouter = "LuaUI/ui_main.lua";
     std::filesystem::path uiDefinitions = "LuaUI/ui_definitions.lua";
+    std::string gameDefinitions = "LuaGame/definitions.lua";
 
     if (luaL_dofile(unsync, uiRouter.string().c_str()) != LUA_OK)
     {
@@ -544,6 +641,7 @@ void LuaSystem::Init(Registry* registry, CommandBuffer& cmd)
     else
     {
         luaL_dofile(unsync, uiDefinitions.string().c_str());
+        luaL_dofile(unsync, gameDefinitions.c_str());
 
         lua_getglobal(unsync, "UIManager");
         lua_getfield(unsync, -1, "Init");

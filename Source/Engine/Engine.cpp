@@ -56,8 +56,7 @@ bool Engine::Initialize(int argc, const char* argv[])
 #endif
 
     InputManager& im = InputManager::Get();
-    im.onCloseGame = CallMe::Delegate<void()>(new auto([this]()
-                                                       { isRunning = false; }));
+    im.onCloseGame = CallMe::Delegate<void()>(CallMe::fromMethod<&Engine::CloseGame>(this));
 
     uint64_t lastTime = SDL_GetTicksNS();
     uint64_t accumulator = 0;
@@ -129,4 +128,9 @@ void Engine::Shutdown()
     defaultWorld = nullptr;
 #else
 #endif
+}
+
+void Engine::CloseGame()
+{
+    isRunning = false;
 }

@@ -1,6 +1,9 @@
 --Global used for all UI actions
 UI = {}
 
+--Global virtual file server, used to get stuff relative to the LuaUI folder
+UI.VFS = {}
+
 --Creates an image
 --@param texturePath string or nill, use to assing a specific texture to the image
 --@return integer the newly created image entity id
@@ -18,7 +21,7 @@ function UI.CreateText(textData) end
 --Example of CreateText
 -- UI.CreateText(
 --         {
---             fontName = "CauseFont.casset",
+--             fontPath = "Assets/Fonts/CauseFont.casset",
 --             text = "Hello from LUA!!",
 --             color = { 0.0, 0.0, 0.0, 1.0},
 --             fontSize = 60.0

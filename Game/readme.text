@@ -1,2 +1,0 @@
-The game folder is used to store LUA scripts to interact with the engine.
-Each folder is for a specific portion of the game. The scripts don't mix, so if a script is in the wrong folder it will not work and can even crash the engine.

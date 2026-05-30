@@ -1,26 +1,26 @@
-#include "LuaUnsync.h"
+#include "LuaUnsynced.h"
 #include "Debug/DebugSystem.h"
 #include <entt/entt.hpp>
 #include <format>
 #include <lua.hpp>
 #include <string>
 
-constexpr std::string LUA_UNSYNC_LOG = "Lua_Unsync";
+constexpr std::string LUA_UNSYNCED_LOG = "Lua_Unsync";
 
-void LuaUnsync::DispatchClick(lua_State* l, entt::entity pressedEntity)
+void LuaUnsynced::DispatchClick(lua_State* l, entt::entity pressedEntity)
 {
     lua_getglobal(l, "UI");
 
     if (!lua_istable(l, -1))
     {
-        LOG(LUA_UNSYNC_LOG, Error, "Global UI table not found!");
+        LOG(LUA_UNSYNCED_LOG, Error, "Global UI table not found!");
         return;
     }
 
     lua_getfield(l, -1, "DispatchClick");
     if (!lua_isfunction(l, -1))
     {
-        LOG(LUA_UNSYNC_LOG, Error, "UI.DispatchClick is not a function!");
+        LOG(LUA_UNSYNCED_LOG, Error, "UI.DispatchClick is not a function!");
         return;
     }
 
@@ -32,7 +32,7 @@ void LuaUnsync::DispatchClick(lua_State* l, entt::entity pressedEntity)
     if (lua_pcall(l, 1, 0, 0) != LUA_OK)
     {
         const char* error = lua_tostring(l, -1);
-        LOG(LUA_UNSYNC_LOG, Error, std::format("Lua Error in UI Dispatcher: {}", error));
+        LOG(LUA_UNSYNCED_LOG, Error, std::format("Lua Error in UI Dispatcher: {}", error));
 
         lua_pop(l, 1);
     }

@@ -4,7 +4,7 @@
 
 struct lua_State;
 
-class LuaUnsync
+class LuaUnsynced
 {
   public:
     static void DispatchClick(lua_State* l, entt::entity pressedEntity);

@@ -1,7 +1,7 @@
 #include "UISystem.h"
 #include "Components/Hierarchy.h"
 #include "InputManager.h"
-#include "LUA/LuaUnsync.h"
+#include "LUA/LuaUnsynced.h"
 #include "Registry/Registry.h"
 #include "Rendering/RenderingSystem.h"
 #include "Resources/Font.h"
@@ -385,7 +385,7 @@ inline void UpdateInteraction(entt::registry& reg)
             {
                 auto& button = buttonStorage.get(event.pressed);
                 button.onClick.publish();
-                LuaUnsync::DispatchClick(lua.unsyncState, event.pressed);
+                LuaUnsynced::DispatchClick(lua.unsyncedState, event.pressed);
             }
         }
 

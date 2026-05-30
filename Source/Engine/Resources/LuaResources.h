@@ -7,9 +7,9 @@
 struct LuaState
 {
     // UI state
-    lua_State* unsyncState;
+    lua_State* unsyncedState;
     // Game state
-    lua_State* syncState;
+    lua_State* syncedState;
 };
 
 // Used to track user defined data
